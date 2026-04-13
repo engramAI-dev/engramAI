@@ -1,0 +1,31 @@
+# Web framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+pydantic>=2.10.0
+pydantic-settings>=2.6.0
+
+# Database
+sqlalchemy>=2.0.36
+asyncpg>=0.30.0
+alembic>=1.14.0
+pgvector>=0.3.6
+
+# Auth
+httpx>=0.28.0
+python-jose[cryptography]>=3.3.0
+
+# LLM + Embeddings
+anthropic>=0.39.0
+voyageai>=0.3.0
+
+# Task queue
+celery[redis]>=5.4.0
+
+# Utilities
+python-dotenv>=1.0.1
+python-multipart>=0.0.12
+
+# Dev / Testing
+pytest>=8.3.0
+pytest-asyncio>=0.24.0
+ruff>=0.8.0
