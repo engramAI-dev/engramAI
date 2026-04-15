@@ -22,7 +22,8 @@ export interface OutputPanelProps {
   isGenerating: boolean;
 }
 
-export function OutputPanel(_props: OutputPanelProps) {
+export function OutputPanel(props: OutputPanelProps) {
   // TODO [B8]: render formatted output with syntax highlighting + citations.
+  void props;
   return <div data-testid="output-panel" />;
 }
