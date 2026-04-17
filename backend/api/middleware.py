@@ -7,9 +7,9 @@ See `docs/v1/planning/partner-b-v1-plan.md` for scope and
 from dataclasses import dataclass
 
 from fastapi import HTTPException, Request, status
-from jose import ExpiredSignatureError, JWTError, jwt  # noqa: F401
+from jose import ExpiredSignatureError, JWTError, jwt
 
-from config import settings  # noqa: F401
+from config import settings
 
 _ALGORITHM = "HS256"
 
@@ -21,8 +21,24 @@ class CurrentUser:
 
 
 async def get_current_user(request: Request) -> CurrentUser:
-    # TODO [B6a]: decode Bearer JWT, validate claims, return CurrentUser.
-    raise NotImplementedError("B6a not implemented")
+    header = request.headers.get("Authorization")
+    if not header or not header.lower().startswith("bearer "):
+        raise _unauthorized("Not authenticated")
+
+    token = header.split(" ", 1)[1].strip()
+    try:
+        claims = jwt.decode(token, settings.secret_key, algorithms=[_ALGORITHM])
+    except ExpiredSignatureError:
+        raise _unauthorized("Token expired")
+    except JWTError:
+        raise _unauthorized("Invalid token")
+
+    user_id = claims.get("sub")
+    username = claims.get("github_username")
+    if not user_id or not username:
+        raise _unauthorized("Invalid token")
+
+    return CurrentUser(id=user_id, github_username=username)
 
 
 def _unauthorized(detail: str) -> HTTPException:
