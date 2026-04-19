@@ -117,3 +117,94 @@ def test_prose_around_block_preserved() -> None:
     out = process_code(_result(text, origin="code"))
     assert out.response_text.startswith("Here's the code:\n")
     assert out.response_text.endswith("\nHope this helps!")
+
+
+def test_happy_path_javascript() -> None:
+    text = "```javascript\nfunction f() { return 1; }\n```"
+    out = process_code(_result(text, origin="code"))
+    assert "// Source origin: code" in out.response_text
+    assert "function f()" in out.response_text
+    assert "WARNING" not in out.response_text
+
+
+def test_happy_path_rust() -> None:
+    text = "```rust\nfn main() {}\n```"
+    out = process_code(_result(text, origin="code"))
+    assert "// Source origin: code" in out.response_text
+    assert "fn main()" in out.response_text
+    assert "WARNING" not in out.response_text
+
+
+def test_origin_docs_explicit() -> None:
+    text = "```python\nx = 1\n```"
+    out = process_code(_result(text, origin="docs"))
+    assert "# Source origin: docs" in out.response_text
+    assert "NOTE: source-origin flag missing" not in out.response_text
+
+
+def test_origin_mixed_explicit() -> None:
+    text = "```python\nx = 1\n```"
+    out = process_code(_result(text, origin="mixed"))
+    assert "# Source origin: mixed" in out.response_text
+
+
+def test_origin_derived_notion_only() -> None:
+    text = "```python\nx = 1\n```"
+    out = process_code(_result(text, sources=[_src(source="notion", file_path=None)], origin=None))
+    assert "# Source origin: docs" in out.response_text
+    assert "NOTE: source-origin flag missing, derived from chunks" in out.response_text
+
+
+def test_origin_derived_mixed_sources() -> None:
+    text = "```python\nx = 1\n```"
+    sources = [_src(source="github"), _src(source="notion", file_path=None)]
+    out = process_code(_result(text, sources=sources, origin=None))
+    assert "# Source origin: mixed" in out.response_text
+
+
+def test_footer_lists_multiple_sources() -> None:
+    text = "```python\nx = 1\n```"
+    s1 = _src()
+    s2 = SourceChunk(
+        chunk_id="c2", document_id="d2", document_title="config.py",
+        file_path="backend/config.py", source="github",
+        url="https://github.com/x/y/blob/main/backend/config.py",
+        relevance_score=0.7, content_preview="...",
+    )
+    out = process_code(_result(text, sources=[s1, s2], origin="code"))
+    assert "1. middleware.py" in out.response_text
+    assert "2. config.py" in out.response_text
+
+
+def test_file_hint_skips_notion_and_pathless_sources() -> None:
+    text = "```python\nx = 1\n```"
+    notion_src = _src(source="notion", file_path=None)
+    pathless_gh = _src(file_path=None)
+    real_gh = SourceChunk(
+        chunk_id="c3", document_id="d3", document_title="real.py",
+        file_path="backend/real.py", source="github",
+        url="https://github.com/x/y/blob/main/backend/real.py",
+        relevance_score=0.5, content_preview="...",
+    )
+    out = process_code(_result(text, sources=[notion_src, pathless_gh, real_gh], origin="mixed"))
+    assert "# Suggested location: backend/real.py" in out.response_text
+
+
+def test_file_hint_fallback_when_no_github_with_path() -> None:
+    text = "```python\nx = 1\n```"
+    out = process_code(_result(text, sources=[_src(source="notion", file_path=None)], origin="docs"))
+    assert "# Suggested location: (no suggestion)" in out.response_text
+
+
+def test_input_result_not_mutated() -> None:
+    text = "```python\nx = 1\n```\n"
+    original_sources = [_src()]
+    r = _result(text, sources=original_sources, origin="code")
+    original_text = r.response_text
+    original_sources_ref = r.sources
+    out = process_code(r)
+    assert r.response_text == original_text
+    assert r.sources is original_sources_ref
+    assert r.sources == [_src()]
+    assert out is not r
+    assert out.response_text != original_text
