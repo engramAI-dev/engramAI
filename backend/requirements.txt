@@ -18,6 +18,12 @@ python-jose[cryptography]>=3.3.0
 anthropic>=0.39.0
 voyageai>=0.3.0
 
+# Code post-processing (B3)
+# tree-sitter pinned: tree-sitter-languages 1.10.x ships grammars compiled
+# against the pre-0.22 tree-sitter ABI; newer tree-sitter breaks grammar load.
+tree-sitter==0.21.3
+tree-sitter-languages>=1.10.2
+
 # Task queue
 celery[redis]>=5.4.0
 
