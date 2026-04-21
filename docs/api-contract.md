@@ -450,6 +450,45 @@ Get full output content.
 
 ---
 
+## Knowledge
+
+**Owner: Track A (retriever), Track B (endpoint + consumer)**
+
+Added for B14 (MCP plugin). Returns ranked `SourceChunk` results identical to the shape in `ChatEngineResult.sources`. Track B's route stub currently returns an empty chunk list — Track A wires the real retriever (A9) behind this contract.
+
+### `GET /knowledge/search`
+
+**Headers:** `Authorization: Bearer <jwt>`
+
+**Query params:**
+| Param | Type | Default | Notes |
+|---|---|---|---|
+| `q` | string | required | Natural-language query |
+| `top_k` | integer | 10 | 1..50 |
+| `source` | string | — | Optional filter: `github` or `notion` |
+
+**Response `200`:**
+```json
+{
+  "chunks": [
+    {
+      "chunk_id": "...",
+      "document_id": "...",
+      "document_title": "...",
+      "file_path": "src/foo.py",
+      "source": "github",
+      "url": "https://github.com/...",
+      "relevance_score": 0.84,
+      "content_preview": "first 200 chars..."
+    }
+  ]
+}
+```
+
+**Errors:** `401` on missing/invalid JWT.
+
+---
+
 ## Health
 
 **Owner: Track A**

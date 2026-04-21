@@ -29,6 +29,9 @@ tree-sitter-languages>=1.10.2
 # Task queue
 celery[redis]>=5.4.0
 
+# MCP plugin (B14)
+mcp>=1.0.0
+
 # Utilities
 python-dotenv>=1.0.1
 python-multipart>=0.0.12
