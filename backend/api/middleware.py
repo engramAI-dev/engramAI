@@ -38,7 +38,9 @@ async def get_current_user(request: Request) -> CurrentUser:
     if not user_id or not username:
         raise _unauthorized("Invalid token")
 
-    return CurrentUser(id=user_id, github_username=username)
+    user = CurrentUser(id=user_id, github_username=username)
+    request.state.user = user
+    return user
 
 
 def _unauthorized(detail: str) -> HTTPException:
