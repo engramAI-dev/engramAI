@@ -72,7 +72,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
     )
     # pgvector column — added via raw SQL since Alembic doesn't natively handle vector types.
-    op.execute("ALTER TABLE embeddings ADD COLUMN embedding vector(1024) NOT NULL")
+    op.execute("ALTER TABLE embeddings ADD COLUMN embedding vector(768) NOT NULL")
     # HNSW index for cosine similarity search.
     op.execute(
         "CREATE INDEX ix_embeddings_embedding ON embeddings "

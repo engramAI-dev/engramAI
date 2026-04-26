@@ -1,4 +1,4 @@
-"""A2 — Embeddings table model (D1: separate table for clean re-embedding)."""
+"""A2 — Embeddings table model (D1: separate table, D44: 768-dim local model)."""
 
 import uuid
 from datetime import datetime
@@ -19,7 +19,7 @@ class Embedding(Base):
     chunk_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(), ForeignKey("chunks.id", ondelete="CASCADE"), unique=True, nullable=False
     )
-    embedding = mapped_column(Vector(1024), nullable=False)
+    embedding = mapped_column(Vector(768), nullable=False)
     model: Mapped[str] = mapped_column(String(100), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -20,21 +20,31 @@ class Settings(BaseSettings):
     # Frontend URL (for post-auth redirect)
     frontend_url: str = "http://localhost:3000"
 
-    # Anthropic
+    # LLM (D45: configurable provider — "gemini" or "anthropic")
+    llm_provider: str = "gemini"  # "gemini" | "anthropic"
+    llm_model: str = "gemini-2.5-flash"
+
+    # Gemini (free tier)
+    google_api_key: str = ""
+
+    # Anthropic (paid — set llm_provider=anthropic to use)
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-sonnet-4-20250514"
 
     # Notion
     notion_api_key: str = ""
 
-    # Embeddings
-    voyage_api_key: str = ""
-    embedding_model: str = "voyage-code-3"
+    # Embeddings (D44: local model via sentence-transformers)
+    embedding_model: str = "nomic-ai/nomic-embed-text-v1.5"
+    embedding_dimension: int = 768
 
     # CORS
     cors_origins: list[str] = ["http://localhost:3000"]
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {
+        "env_file": ["../.env", ".env"],  # check repo root first, then backend/
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",  # ignore unknown env vars (e.g. NEXT_PUBLIC_*)
+    }
 
 
 settings = Settings()

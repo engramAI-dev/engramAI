@@ -1,13 +1,13 @@
 """A9 — Vector retrieval layer.
 
-Design: D29 (inline async query embedding), D30 (cosine), D31 (pgvector only).
-Returns SourceChunk objects matching the locked contract for B14 and B8.
+Design: D29 (inline async query embedding via run_in_executor),
+D30 (cosine), D31 (pgvector only), D44 (local sentence-transformers model).
 """
 
 import asyncio
 import logging
 
-import voyageai
+from sentence_transformers import SentenceTransformer
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,19 +16,25 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
+# Module-level model — loaded once per process
+_model: SentenceTransformer | None = None
+
+
+def _get_model() -> SentenceTransformer:
+    global _model
+    if _model is None:
+        _model = SentenceTransformer(settings.embedding_model, trust_remote_code=True)
+    return _model
+
 
 async def _embed_query(query: str) -> list[float]:
-    """Embed a query string via Voyage SDK, async via run_in_executor (D29)."""
+    """Embed a query string locally, async via run_in_executor (D29)."""
     loop = asyncio.get_event_loop()
 
     def _sync_embed() -> list[float]:
-        client = voyageai.Client(api_key=settings.voyage_api_key)
-        result = client.embed(
-            [query],
-            model=settings.embedding_model,
-            input_type="query",
-        )
-        return result.embeddings[0]
+        model = _get_model()
+        vector = model.encode(query, normalize_embeddings=True)
+        return vector.tolist()
 
     return await loop.run_in_executor(None, _sync_embed)
 
@@ -50,7 +56,6 @@ async def retrieve(
     vec_literal = "[" + ",".join(str(v) for v in query_embedding) + "]"
 
     # 2. Build pgvector similarity search query
-    # Cosine distance: <=> returns distance (0 = identical), we convert to similarity score
     where_clause = "d.user_id = :user_id"
     params: dict = {"user_id": user_id, "top_k": top_k}
 

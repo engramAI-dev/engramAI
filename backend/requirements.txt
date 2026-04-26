@@ -16,9 +16,10 @@ pgvector>=0.3.6
 httpx>=0.28.0
 python-jose[cryptography]>=3.3.0
 
-# LLM + Embeddings
-anthropic>=0.39.0
-voyageai>=0.3.0
+# LLM (D45: configurable provider)
+google-genai>=1.0.0    # Gemini (free tier, default)
+anthropic>=0.39.0      # Claude (paid, set LLM_PROVIDER=anthropic)
+sentence-transformers>=3.0.0
 
 # Code post-processing (B3)
 # tree-sitter pinned: tree-sitter-languages 1.10.x ships grammars compiled

@@ -191,7 +191,7 @@ class ChatEngine:
             elif event.type == "complete":
                 input_tokens = event.input_tokens
                 output_tokens = event.output_tokens
-                model = settings.anthropic_model
+                model = settings.llm_model
 
         # 7. Yield sources
         yield {

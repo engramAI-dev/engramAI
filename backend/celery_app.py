@@ -26,5 +26,11 @@ celery.conf.update(
     worker_prefetch_multiplier=1,
 )
 
-# Autodiscover tasks in the ingestion package.
-celery.autodiscover_tasks(["ingestion"])
+# Explicitly import task modules (autodiscover looks for tasks.py by default).
+celery.conf.update(
+    include=[
+        "ingestion.github",
+        "ingestion.notion",
+        "ingestion.embeddings",
+    ],
+)
