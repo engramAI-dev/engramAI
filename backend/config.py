@@ -15,11 +15,17 @@ class Settings(BaseSettings):
     # GitHub OAuth
     github_client_id: str = ""
     github_client_secret: str = ""
-    github_redirect_uri: str = "http://localhost:3000/api/auth/callback"
+    github_redirect_uri: str = "http://localhost:8000/api/auth/callback"
+
+    # Frontend URL (for post-auth redirect)
+    frontend_url: str = "http://localhost:3000"
 
     # Anthropic
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-20250514"
+
+    # Notion
+    notion_api_key: str = ""
 
     # Embeddings
     voyage_api_key: str = ""

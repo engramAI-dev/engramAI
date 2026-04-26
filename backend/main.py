@@ -11,9 +11,10 @@ from api.usage_middleware import usage_tracking_middleware
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # Startup: initialize DB pool, etc.
+    from models.database import engine
+
     yield
-    # Shutdown: close connections, etc.
+    await engine.dispose()
 
 
 app = FastAPI(
