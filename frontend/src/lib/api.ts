@@ -155,3 +155,24 @@ export async function listOutputs(params: {
 export async function getOutput(id: string): Promise<OutputResponse> {
   return jsonOrThrow<OutputResponse>(`/api/outputs/${id}`);
 }
+
+export async function generateOutput(
+  messageId: string,
+  outputType: OutputType,
+): Promise<OutputResponse> {
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("engram_token") : null;
+  const res = await fetch(getApiUrl("/api/outputs/generate"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ message_id: messageId, output_type: outputType }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new ApiError(res.status, body.detail || `API error ${res.status}`);
+  }
+  return res.json() as Promise<OutputResponse>;
+}
