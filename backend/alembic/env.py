@@ -13,8 +13,8 @@ from sqlalchemy import engine_from_config, pool
 from config import settings
 from models.database import Base
 
-# Import models so they register on Base.metadata for autogenerate.
-from models import output  # noqa: F401
+# Import all models so they register on Base.metadata for autogenerate.
+import models  # noqa: F401
 
 config = context.config
 

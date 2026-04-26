@@ -15,20 +15,36 @@ class Settings(BaseSettings):
     # GitHub OAuth
     github_client_id: str = ""
     github_client_secret: str = ""
-    github_redirect_uri: str = "http://localhost:3000/api/auth/callback"
+    github_redirect_uri: str = "http://localhost:8000/api/auth/callback"
 
-    # Anthropic
+    # Frontend URL (for post-auth redirect)
+    frontend_url: str = "http://localhost:3000"
+
+    # LLM (D45: configurable provider — "gemini" or "anthropic")
+    llm_provider: str = "gemini"  # "gemini" | "anthropic"
+    llm_model: str = "gemini-2.5-flash"
+
+    # Gemini (free tier)
+    google_api_key: str = ""
+
+    # Anthropic (paid — set llm_provider=anthropic to use)
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-sonnet-4-20250514"
 
-    # Embeddings
-    voyage_api_key: str = ""
-    embedding_model: str = "voyage-code-3"
+    # Notion
+    notion_api_key: str = ""
+
+    # Embeddings (D44: local model via sentence-transformers)
+    embedding_model: str = "nomic-ai/nomic-embed-text-v1.5"
+    embedding_dimension: int = 768
 
     # CORS
     cors_origins: list[str] = ["http://localhost:3000"]
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {
+        "env_file": ["../.env", ".env"],  # check repo root first, then backend/
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",  # ignore unknown env vars (e.g. NEXT_PUBLIC_*)
+    }
 
 
 settings = Settings()

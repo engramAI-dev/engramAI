@@ -1,16 +1,17 @@
 """Knowledge store search endpoint.
 
-Contract addition for B14 — see `docs/api-contract.md` §"Knowledge".
-The endpoint is introduced here as a stub returning an empty chunk list
-so the MCP plugin can build against a stable shape. Track A wires the
-real retriever (A9) behind this contract in a follow-up.
+Contract for B14 (MCP plugin). Response shape is locked — do not change.
+Now wired to the real retriever (A9).
 """
 
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.middleware import CurrentUser, get_current_user
+from knowledge.retriever import retrieve
+from models.database import get_session
 
 router = APIRouter()
 
@@ -20,9 +21,29 @@ async def search_knowledge(
     q: str = Query(..., description="Natural-language query."),
     top_k: int = Query(10, ge=1, le=50),
     source: str | None = Query(None, pattern="^(github|notion)$"),
-    _user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ) -> dict[str, list[dict[str, Any]]]:
-    # TODO [A9]: bridge to `backend/knowledge/retriever.py` once the retrieval
-    # layer lands. Response shape is the locked contract — do not change.
-    del q, top_k, source
-    return {"chunks": []}
+    """Search indexed knowledge by semantic similarity."""
+    chunks = await retrieve(
+        query=q,
+        user_id=user.id,
+        session=session,
+        top_k=top_k,
+        source_filter=source,
+    )
+    return {
+        "chunks": [
+            {
+                "chunk_id": c.chunk_id,
+                "document_id": c.document_id,
+                "document_title": c.document_title,
+                "file_path": c.file_path,
+                "source": c.source,
+                "url": c.url,
+                "relevance_score": c.relevance_score,
+                "content_preview": c.content_preview,
+            }
+            for c in chunks
+        ]
+    }
