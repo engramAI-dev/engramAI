@@ -86,17 +86,40 @@ async def retrieve(
     result = await session.execute(sql, params)
     rows = result.fetchall()
 
-    # 3. Map to SourceChunk objects
+    # 3. Map to SourceChunk objects.
+    # Line ranges are surfaced via the existing url + content_preview fields
+    # (SourceChunk shape is a locked B contract, so we don't add new fields).
     chunks: list[SourceChunk] = []
     for row in rows:
-        content_preview = row.content[:200] if row.content else ""
+        raw_preview = row.content[:200] if row.content else ""
+        start, end = row.start_line, row.end_line
+        line_label = ""
+        if start is not None and end is not None and end >= start:
+            line_label = f"L{start}" if start == end else f"L{start}-L{end}"
+
+        content_preview = (
+            f"Lines {start}-{end} · {raw_preview}"
+            if line_label and start != end
+            else f"Line {start} · {raw_preview}"
+            if line_label
+            else raw_preview
+        )
+
+        url = row.url or ""
+        # Anchor only makes sense for GitHub blob URLs; Notion ignores it.
+        if line_label and row.source == "github" and url:
+            anchor = (
+                f"#L{start}-L{end}" if start != end else f"#L{start}"
+            )
+            url = f"{url}{anchor}"
+
         chunks.append(SourceChunk(
             chunk_id=str(row.chunk_id),
             document_id=str(row.document_id),
             document_title=row.document_title or "",
             file_path=row.file_path,
             source=row.source,
-            url=row.url or "",
+            url=url,
             relevance_score=round(float(row.relevance_score), 4),
             content_preview=content_preview,
         ))

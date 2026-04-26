@@ -8,28 +8,48 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useChat } from "@/lib/chat-context";
 
+type Source = ReturnType<typeof useChat>["currentSources"][number];
+
+function dedupeByDocument(sources: Source[]): { top: Source; extras: number }[] {
+  const groups = new Map<string, Source[]>();
+  for (const s of sources) {
+    const list = groups.get(s.document_id) ?? [];
+    list.push(s);
+    groups.set(s.document_id, list);
+  }
+  return Array.from(groups.values())
+    .map((list) => {
+      const sorted = [...list].sort(
+        (a, b) => b.relevance_score - a.relevance_score
+      );
+      return { top: sorted[0], extras: sorted.length - 1 };
+    })
+    .sort((a, b) => b.top.relevance_score - a.top.relevance_score);
+}
+
 export function ContextPanel() {
   const { currentSources } = useChat();
+  const grouped = dedupeByDocument(currentSources);
 
   return (
-    <aside className="flex w-80 flex-col border-l bg-muted/10">
+    <aside className="flex h-full w-80 min-h-0 flex-col border-l bg-muted/10">
       <div className="flex h-14 items-center px-4">
         <h3 className="text-sm font-medium text-muted-foreground">
           Sources{" "}
-          {currentSources.length > 0 && (
-            <span className="ml-1 text-xs">({currentSources.length})</span>
+          {grouped.length > 0 && (
+            <span className="ml-1 text-xs">({grouped.length})</span>
           )}
         </h3>
       </div>
       <Separator />
-      <ScrollArea className="flex-1 p-3">
-        {currentSources.length === 0 ? (
+      <ScrollArea className="min-h-0 flex-1 p-3">
+        {grouped.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
             Referenced sources will appear here when you ask a question.
           </p>
         ) : (
           <div className="flex flex-col gap-2">
-            {currentSources.map((source) => (
+            {grouped.map(({ top: source, extras }) => (
               <a
                 key={source.chunk_id}
                 href={source.url}
@@ -66,6 +86,11 @@ export function ContextPanel() {
                   <span className="text-[10px] text-muted-foreground">
                     {source.source}
                   </span>
+                  {extras > 0 && (
+                    <span className="ml-auto text-[10px] text-muted-foreground">
+                      +{extras} more chunk{extras > 1 ? "s" : ""}
+                    </span>
+                  )}
                 </div>
               </a>
             ))}

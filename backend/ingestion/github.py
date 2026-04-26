@@ -49,6 +49,24 @@ def _clone_repo(repo_url: str, github_token: str | None, dest: str) -> None:
         raise RuntimeError(f"git clone failed: {result.stderr.strip()}")
 
 
+def _detect_default_branch(repo_dir: str) -> str:
+    """Return the cloned repo's default branch name (falls back to 'main')."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", repo_dir, "symbolic-ref", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            branch = result.stdout.strip()
+            if branch:
+                return branch
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logger.warning("Could not detect default branch: %s", exc)
+    return "main"
+
+
 def _walk_files(repo_dir: str) -> list[str]:
     """Walk repo and return list of files that pass the filter (D19)."""
     files: list[str] = []
@@ -107,6 +125,9 @@ def ingest_github_repo(
         repo_dir = os.path.join(tmp_dir, "repo")
         _clone_repo(repo_url, github_token, repo_dir)
 
+        # Detect default branch (fixes hardcoded 'main' for repos using 'master' etc.)
+        default_branch = _detect_default_branch(repo_dir)
+
         # Walk and filter files
         files = _walk_files(repo_dir)
         total_files = len(files)
@@ -140,7 +161,7 @@ def ingest_github_repo(
                     source="github",
                     repo=repo_slug,
                     file_path=rel_path,
-                    url=f"https://github.com/{repo_slug}/blob/main/{rel_path}",
+                    url=f"https://github.com/{repo_slug}/blob/{default_branch}/{rel_path.replace(os.sep, '/')}",
                     language=_detect_language(rel_path),
                 )
                 session.add(doc)
