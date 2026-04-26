@@ -161,7 +161,7 @@ def ingest_github_repo(
                     source="github",
                     repo=repo_slug,
                     file_path=rel_path,
-                    url=f"https://github.com/{repo_slug}/blob/{default_branch}/{rel_path}",
+                    url=f"https://github.com/{repo_slug}/blob/{default_branch}/{rel_path.replace(os.sep, '/')}",
                     language=_detect_language(rel_path),
                 )
                 session.add(doc)
