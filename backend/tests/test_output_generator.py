@@ -211,8 +211,81 @@ def test_empty_response_text_raises() -> None:
 
 
 @pytest.mark.asyncio
-async def test_generate_output_blocked_on_partner_a_fetch() -> None:
-    # Documents the current state: service-level entry point is gated on A's
-    # messages table. Flag a regression if someone silently swaps the fetch.
-    with pytest.raises(NotImplementedError, match="messages table"):
-        await generate_output(session=None, user_id=_USER_ID, message_id=_MSG_ID, output_type="summary")  # type: ignore[arg-type]
+async def test_generate_output_fetches_from_messages_and_persists() -> None:
+    # Service-level entry point reads A's messages table and writes outputs.
+    # Stub session: scalar_one_or_none returns a fake Message; .add captures.
+    from types import SimpleNamespace
+
+    msg = SimpleNamespace(
+        id=uuid.UUID(_MSG_ID),
+        conversation_id=uuid.UUID(_CONV_ID),
+        role="assistant",
+        content="answer text",
+        sources=[],
+        intent="explain",
+        input_tokens=5,
+        output_tokens=7,
+    )
+    added: list[object] = []
+
+    class _FakeResult:
+        def scalar_one_or_none(self) -> object:
+            return msg
+
+    class _FakeSession:
+        async def execute(self, _stmt: object) -> _FakeResult:
+            return _FakeResult()
+
+        def add(self, obj: object) -> None:
+            added.append(obj)
+
+        async def flush(self) -> None:
+            return None
+
+    output = await generate_output(
+        session=_FakeSession(),  # type: ignore[arg-type]
+        user_id=_USER_ID,
+        message_id=_MSG_ID,
+        output_type="summary",
+    )
+    assert output.title  # derived from response_text
+    assert output.content == "answer text"
+    assert added == [output]
+
+
+@pytest.mark.asyncio
+async def test_generate_output_rejects_user_role_message() -> None:
+    from types import SimpleNamespace
+
+    msg = SimpleNamespace(
+        id=uuid.UUID(_MSG_ID),
+        conversation_id=uuid.UUID(_CONV_ID),
+        role="user",
+        content="q",
+        sources=[],
+        intent=None,
+        input_tokens=None,
+        output_tokens=None,
+    )
+
+    class _FakeResult:
+        def scalar_one_or_none(self) -> object:
+            return msg
+
+    class _FakeSession:
+        async def execute(self, _stmt: object) -> _FakeResult:
+            return _FakeResult()
+
+        def add(self, _obj: object) -> None:
+            return None
+
+        async def flush(self) -> None:
+            return None
+
+    with pytest.raises(ValueError, match="not an assistant"):
+        await generate_output(
+            session=_FakeSession(),  # type: ignore[arg-type]
+            user_id=_USER_ID,
+            message_id=_MSG_ID,
+            output_type="summary",
+        )

@@ -8,12 +8,8 @@ Called from `POST /outputs/generate` (B6b) in the v1.5 release cycle.
 Design notes — "unclear defaults" flagged here per the pre-flight pass:
 
 - **Q1 (signature):** `generate_output` takes `message_id` and fetches the
-  chat result itself, on the assumption that Track A's `messages` table
-  stores the full shape per `api-contract.md` §Database Tables. A's
-  migration does NOT exist yet, so the internal fetch raises
-  `NotImplementedError` for now. B6b can call `build_output(...)` directly
-  with a pre-built `ChatEngineResult` if it needs to route around this
-  before A ships.
+  chat result from A's `messages` table. `model` isn't persisted there;
+  `build_output` doesn't use it.
 - **Q2 (intent vs output_type):** request's `output_type` is authoritative.
   No cross-check against `result.intent`. If a user asks for a
   `code_snippet` on an `explain`-intent message, we honor it and derive
@@ -34,9 +30,11 @@ import re
 import uuid
 from typing import Final
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from chat.engine import ChatEngineResult, SourceChunk
+from models.message import Message
 from models.output import Output
 
 _FENCE_RE = re.compile(r"```([A-Za-z0-9_+-]*)\n(.*?)```", re.DOTALL)
@@ -102,18 +100,43 @@ async def generate_output(
 
 
 async def _fetch_chat_result(session: AsyncSession, message_id: str) -> ChatEngineResult:
-    # TODO [B2/A]: reconstruct `ChatEngineResult` from A's `messages` table
-    # once it exists. Fields land per `api-contract.md` §Database Tables ->
-    # messages: `sources` JSONB -> `list[SourceChunk]`, `content` ->
-    # `response_text`, `intent` direct, `token_count` split across input/
-    # output if A stores both. If A's stored shape doesn't carry enough to
-    # reconstruct the full result, flip Q1 to (a): B6b passes a pre-built
-    # `ChatEngineResult` directly into `build_output(...)` and we drop
-    # this fetch.
-    del session, message_id
-    raise NotImplementedError(
-        "Awaiting Track A's messages table. B6b may route around this by "
-        "calling build_output(...) directly with a pre-built ChatEngineResult."
+    """Reconstruct a `ChatEngineResult` from A's `messages` table.
+
+    Only assistant rows are eligible. `model` is not persisted in `messages`,
+    so we pass through an empty string — downstream `build_output` doesn't
+    use it. `sources` JSONB is rehydrated into `SourceChunk` dataclasses.
+    """
+    msg = (
+        await session.execute(select(Message).where(Message.id == uuid.UUID(message_id)))
+    ).scalar_one_or_none()
+    if msg is None:
+        raise ValueError(f"Message {message_id} not found")
+    if msg.role != "assistant":
+        raise ValueError(f"Message {message_id} is not an assistant message")
+
+    sources = [
+        SourceChunk(
+            chunk_id=s.get("chunk_id", ""),
+            document_id=s.get("document_id", ""),
+            document_title=s.get("document_title", ""),
+            file_path=s.get("file_path"),
+            source=s.get("source", ""),
+            url=s.get("url", ""),
+            relevance_score=float(s.get("relevance_score", 0.0)),
+            content_preview=s.get("content_preview", ""),
+        )
+        for s in (msg.sources or [])
+    ]
+
+    return ChatEngineResult(
+        response_text=msg.content,
+        sources=sources,
+        conversation_id=str(msg.conversation_id),
+        message_id=str(msg.id),
+        intent=msg.intent or "question",
+        model="",
+        input_tokens=msg.input_tokens or 0,
+        output_tokens=msg.output_tokens or 0,
     )
 
 

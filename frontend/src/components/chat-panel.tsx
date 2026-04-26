@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { OutputPanel, type OutputPanelSource } from "@/components/output-panel";
+import { SaveAsOutput } from "@/components/save-as-output";
 import { useChat } from "@/lib/chat-context";
 
 function sourcesToOutputPanelSources(
@@ -74,6 +75,10 @@ export function ChatPanel() {
                       intent="question"
                       isGenerating={isStreaming && msg === messages[messages.length - 1] && !msg.content}
                     />
+                    {msg.content &&
+                      !(isStreaming && msg === messages[messages.length - 1]) && (
+                        <SaveAsOutput messageId={msg.id} />
+                      )}
                   </div>
                 </div>
               )
