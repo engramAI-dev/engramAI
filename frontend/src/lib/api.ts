@@ -78,3 +78,80 @@ export async function apiStream(
 
   return res.body.getReader();
 }
+
+// ---------------------------------------------------------------------------
+// B-side: outputs API (B6b/B7/B9). Reuses apiFetch above so auth + base URL
+// stay aligned with A's chat surface.
+// ---------------------------------------------------------------------------
+
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+export type OutputType = "code_snippet" | "summary" | "report";
+
+export interface OutputListItem {
+  id: string;
+  type: OutputType;
+  title: string;
+  preview: string;
+  created_at: string;
+}
+
+export interface OutputListResponse {
+  outputs: OutputListItem[];
+  total: number;
+  page: number;
+}
+
+export interface OutputResponse {
+  id: string;
+  type: OutputType;
+  title: string;
+  content: string;
+  created_at: string;
+  metadata: {
+    language: string | null;
+    file_path_suggestion: string | null;
+    source_message_id: string;
+    source_conversation_id: string;
+  };
+}
+
+async function jsonOrThrow<T>(path: string): Promise<T> {
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("engram_token") : null;
+  const res = await fetch(getApiUrl(path), {
+    cache: "no-store",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new ApiError(res.status, body.detail || `API error ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export async function listOutputs(params: {
+  type?: OutputType;
+  page?: number;
+  limit?: number;
+} = {}): Promise<OutputListResponse> {
+  const qs = new URLSearchParams();
+  if (params.type) qs.set("type", params.type);
+  if (params.page) qs.set("page", String(params.page));
+  if (params.limit) qs.set("limit", String(params.limit));
+  const query = qs.toString();
+  return jsonOrThrow<OutputListResponse>(
+    query ? `/api/outputs?${query}` : "/api/outputs",
+  );
+}
+
+export async function getOutput(id: string): Promise<OutputResponse> {
+  return jsonOrThrow<OutputResponse>(`/api/outputs/${id}`);
+}
