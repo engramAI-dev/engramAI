@@ -90,57 +90,93 @@ def _extract_text_from_rich_text(rich_text_list: list[dict]) -> str:
     return "".join(item.get("plain_text", "") for item in rich_text_list)
 
 
-def _blocks_to_text(blocks: list[dict]) -> str:
-    """Convert Notion blocks to plain text."""
+def _blocks_to_text(blocks: list[dict]) -> tuple[str, list[tuple[int, str]]]:
+    """Convert Notion blocks to plain text.
+
+    Returns the joined text and a list of (line_index, block_id) entries
+    pointing at where each non-empty block begins in the joined output.
+    Citations later use this to build a `#<block-id>` anchor that jumps
+    straight to the cited block in Notion's UI.
+    """
     lines: list[str] = []
+    block_starts: list[tuple[int, str]] = []
+
+    def _emit(block_id: str, *new_lines: str) -> None:
+        # \n\n join inserts a blank line between entries, so each new
+        # entry begins at index = len(lines) * 2 in the final string's
+        # line list. We track logical entry start as len(lines) and let
+        # callers convert.
+        if not new_lines:
+            return
+        block_starts.append((len(lines), block_id))
+        lines.extend(new_lines)
 
     for block in blocks:
         btype = block.get("type", "")
         block_data = block.get(btype, {})
+        bid = block.get("id", "")
 
         if btype in ("paragraph", "quote", "callout", "toggle"):
             text = _extract_text_from_rich_text(block_data.get("rich_text", []))
             if text:
-                lines.append(text)
+                _emit(bid, text)
 
         elif btype in ("heading_1", "heading_2", "heading_3"):
             text = _extract_text_from_rich_text(block_data.get("rich_text", []))
             level = btype[-1]
             prefix = "#" * int(level)
             if text:
-                lines.append(f"{prefix} {text}")
+                _emit(bid, f"{prefix} {text}")
 
         elif btype == "bulleted_list_item":
             text = _extract_text_from_rich_text(block_data.get("rich_text", []))
             if text:
-                lines.append(f"- {text}")
+                _emit(bid, f"- {text}")
 
         elif btype == "numbered_list_item":
             text = _extract_text_from_rich_text(block_data.get("rich_text", []))
             if text:
-                lines.append(f"1. {text}")
+                _emit(bid, f"1. {text}")
 
         elif btype == "to_do":
             text = _extract_text_from_rich_text(block_data.get("rich_text", []))
             checked = block_data.get("checked", False)
             marker = "[x]" if checked else "[ ]"
             if text:
-                lines.append(f"- {marker} {text}")
+                _emit(bid, f"- {marker} {text}")
 
         elif btype == "code":
             text = _extract_text_from_rich_text(block_data.get("rich_text", []))
             lang = block_data.get("language", "")
             if text:
-                lines.append(f"```{lang}")
-                lines.append(text)
-                lines.append("```")
+                _emit(bid, f"```{lang}", text, "```")
 
         elif btype == "divider":
-            lines.append("---")
+            _emit(bid, "---")
 
         # Skip unsupported types: image, embed, table, child_page, etc.
 
-    return "\n\n".join(lines)
+    text = "\n\n".join(lines)
+    # Convert "entry index" to actual line index in the joined text.
+    # Entry i starts at line i*2 because \n\n is a one-blank-line separator.
+    line_to_block = [(entry_idx * 2, bid) for entry_idx, bid in block_starts]
+    return text, line_to_block
+
+
+def _block_id_for_line(line_to_block: list[tuple[int, str]], line: int) -> str | None:
+    """Return the block id whose region covers the given 1-based line."""
+    if not line_to_block:
+        return None
+    # line_to_block is in ascending order. Find the last entry with start <= line-1
+    # (chunker uses 1-based lines, our list uses 0-based).
+    target = line - 1
+    matched: str | None = None
+    for start, bid in line_to_block:
+        if start <= target:
+            matched = bid
+        else:
+            break
+    return matched
 
 
 def _get_page_title(page: dict) -> str:
@@ -219,7 +255,7 @@ def ingest_notion_workspace(
                     logger.warning("Could not fetch blocks for page %s", page_id)
                     continue
 
-                text = _blocks_to_text(blocks)
+                text, line_to_block = _blocks_to_text(blocks)
                 if not text.strip():
                     continue
 
@@ -238,6 +274,10 @@ def ingest_notion_workspace(
                 # Chunk — treat as markdown since we converted to markdown-ish text
                 chunks = chunk_file(text, f"{title}.md")
                 for idx, chunk in enumerate(chunks):
+                    block_id = _block_id_for_line(line_to_block, chunk.start_line)
+                    chunk_meta: dict = {}
+                    if block_id:
+                        chunk_meta["notion_block_id"] = block_id
                     session.add(Chunk(
                         id=uuid.uuid4(),
                         document_id=doc.id,
@@ -246,6 +286,7 @@ def ingest_notion_workspace(
                         start_line=chunk.start_line,
                         end_line=chunk.end_line,
                         chunk_type=chunk.chunk_type,
+                        metadata_=chunk_meta,
                     ))
 
                 # Update progress

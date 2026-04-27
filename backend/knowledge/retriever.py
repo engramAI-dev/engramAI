@@ -70,6 +70,7 @@ async def retrieve(
             c.content,
             c.start_line,
             c.end_line,
+            c.metadata AS chunk_metadata,
             d.title AS document_title,
             d.file_path,
             d.source,
@@ -97,21 +98,32 @@ async def retrieve(
         if start is not None and end is not None and end >= start:
             line_label = f"L{start}" if start == end else f"L{start}-L{end}"
 
+        # Line numbers only make sense for code (GitHub source). Notion's
+        # start/end_line are post-conversion artifacts of our markdown-ish
+        # rendering — they don't map to anything the user can see in Notion.
+        is_code_source = row.source == "github"
         content_preview = (
             f"Lines {start}-{end} · {raw_preview}"
-            if line_label and start != end
+            if line_label and is_code_source and start != end
             else f"Line {start} · {raw_preview}"
-            if line_label
+            if line_label and is_code_source
             else raw_preview
         )
 
         url = row.url or ""
-        # Anchor only makes sense for GitHub blob URLs; Notion ignores it.
-        if line_label and row.source == "github" and url:
+        if line_label and is_code_source and url:
+            # GitHub blob URL anchor — jumps to the cited line range.
             anchor = (
                 f"#L{start}-L{end}" if start != end else f"#L{start}"
             )
             url = f"{url}{anchor}"
+        elif row.source == "notion" and url:
+            # Notion block-level anchor — `#<block-id-without-dashes>` is the
+            # format the Notion web UI uses to scroll to a specific block.
+            chunk_meta = row.chunk_metadata or {}
+            block_id = chunk_meta.get("notion_block_id") if isinstance(chunk_meta, dict) else None
+            if block_id:
+                url = f"{url}#{block_id.replace('-', '')}"
 
         chunks.append(SourceChunk(
             chunk_id=str(row.chunk_id),
