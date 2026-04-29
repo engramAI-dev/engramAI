@@ -30,8 +30,10 @@ class Settings(BaseSettings):
     # Anthropic (paid — set llm_provider=anthropic to use)
     anthropic_api_key: str = ""
 
-    # Notion
-    notion_api_key: str = ""
+    # Notion OAuth
+    notion_client_id: str = ""
+    notion_client_secret: str = ""
+    notion_redirect_uri: str = "http://localhost:8000/api/providers/notion/callback"
 
     # Embeddings (D44: local model via sentence-transformers)
     embedding_model: str = "nomic-ai/nomic-embed-text-v1.5"

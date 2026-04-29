@@ -11,10 +11,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.middleware import CurrentUser, get_current_user
-from config import settings
 from models.database import get_session
 from models.ingest_job import IngestJob
 from models.user import User
+from models.user_connection import UserConnection
 
 router = APIRouter()
 
@@ -81,10 +81,19 @@ async def ingest_notion(
     session: AsyncSession = Depends(get_session),
 ) -> IngestStatusResponse:
     """Trigger ingestion of a Notion workspace."""
-    if not settings.notion_api_key:
+    # Look up per-user Notion token from OAuth connection.
+    result = await session.execute(
+        select(UserConnection.access_token).where(
+            UserConnection.user_id == uuid.UUID(user.id),
+            UserConnection.provider == "notion",
+        )
+    )
+    notion_token = result.scalar_one_or_none()
+
+    if not notion_token:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Notion API key not configured",
+            detail="Notion not connected — connect via OAuth in onboarding or connections page",
         )
 
     job_id = uuid.uuid4()
@@ -98,11 +107,11 @@ async def ingest_notion(
     session.add(job)
     await session.commit()
 
-    # Dispatch Celery task
+    # Dispatch Celery task with the per-user token
     from ingestion.notion import ingest_notion_workspace
     ingest_notion_workspace.delay(
         job_id=str(job_id),
-        notion_api_key=settings.notion_api_key,
+        notion_api_key=notion_token,
         user_id=user.id,
     )
 
@@ -137,3 +146,40 @@ async def get_ingest_status(
         total_documents=job.total_documents,
         error=job.error_message,
     )
+
+
+@router.post("/cancel/{job_id}", status_code=status.HTTP_200_OK)
+async def cancel_job(
+    job_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Cancel an ingestion job by marking it as failed."""
+    result = await session.execute(
+        select(IngestJob).where(
+            IngestJob.id == uuid.UUID(job_id),
+            IngestJob.user_id == uuid.UUID(user.id),
+        )
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found",
+        )
+
+    if job.status in ("complete", "failed"):
+        return {"status": job.status, "message": "Job already finished"}
+
+    job.status = "failed"
+    job.error_message = "Cancelled by user"
+    await session.commit()
+
+    # Attempt to revoke the Celery task (best-effort)
+    try:
+        from celery_app import celery
+        celery.control.revoke(job_id, terminate=True)
+    except Exception:
+        pass
+
+    return {"status": "failed", "message": "Job cancelled"}

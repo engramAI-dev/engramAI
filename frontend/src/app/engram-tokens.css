@@ -1,0 +1,222 @@
+/* Engram design tokens — TE x Apple aesthetic.
+   Cool neutrals, single saturated accent, hairline borders, mono ornament. */
+
+:root {
+  /* Type */
+  --font-sans: "Inter Tight", "Inter", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  --font-display: "Inter Tight", "Inter", -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Light theme — cool neutrals, off-white */
+  --bg: #FAFAF7;
+  --surface: #FFFFFF;
+  --surface-2: #F4F3EE;
+  --surface-3: #ECEAE2;
+  --ink: #0E0E0C;
+  --ink-2: #2A2A26;
+  --ink-3: #5C5B53;
+  --ink-4: #8E8C82;
+  --ink-5: #B8B6AC;
+  --line: #E4E2D9;
+  --line-2: #D6D3C7;
+  --line-strong: #0E0E0C;
+
+  /* Accent — vibrant, single saturated hue. Default = TE-ish orange. */
+  --accent: #FF5B14;
+  --accent-ink: #FFFFFF;
+  --accent-soft: #FFE7DA;
+  --accent-soft-ink: #B23B00;
+
+  /* Status (muted, chip-only) */
+  --green: #2F7D4F;
+  --green-soft: #DCEEDF;
+  --amber: #B97E00;
+  --amber-soft: #F6E7C2;
+  --red: #B43A2A;
+  --red-soft: #F4D9D2;
+  --blue: #2B58C0;
+  --blue-soft: #DAE3F6;
+
+  /* Radii */
+  --r-1: 4px;
+  --r-2: 6px;
+  --r-3: 10px;
+  --r-4: 14px;
+  --r-pill: 999px;
+
+  /* Spacing scale (pixels) */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-12: 48px;
+  --s-16: 64px;
+
+  /* Density */
+  --row-h: 40px;
+  --row-h-sm: 32px;
+
+  /* Shadows — almost none, hairline borders preferred */
+  --shadow-1: 0 1px 0 rgba(14,14,12,0.04);
+  --shadow-pop: 0 8px 24px rgba(14,14,12,0.08), 0 1px 2px rgba(14,14,12,0.04);
+}
+
+[data-theme="dark"] {
+  --bg: #0C0C0A;
+  --surface: #131311;
+  --surface-2: #1A1A17;
+  --surface-3: #22221E;
+  --ink: #F2F1EA;
+  --ink-2: #DDDBD0;
+  --ink-3: #9A988C;
+  --ink-4: #6E6C62;
+  --ink-5: #4A4842;
+  --line: #26251F;
+  --line-2: #34332C;
+  --line-strong: #F2F1EA;
+
+  --accent-soft: #3A1A0A;
+  --accent-soft-ink: #FFB58F;
+
+  --green-soft: #1A2A1F;
+  --amber-soft: #2C2410;
+  --red-soft: #2A1612;
+  --blue-soft: #131C30;
+}
+
+/* Accent variants */
+[data-accent="orange"] { --accent: #FF5B14; --accent-soft: #FFE7DA; --accent-soft-ink: #B23B00; }
+[data-accent="amber"]  { --accent: #F2A900; --accent-soft: #FFEFC6; --accent-soft-ink: #7A5500; }
+[data-accent="lime"]   { --accent: #B7E305; --accent-ink: #0E0E0C; --accent-soft: #ECF8B9; --accent-soft-ink: #4E6300; }
+[data-accent="electric"] { --accent: #2D5BFF; --accent-soft: #DAE3FF; --accent-soft-ink: #0E2B9C; }
+[data-accent="magenta"] { --accent: #FF2D7A; --accent-soft: #FFD9E6; --accent-soft-ink: #9C0E45; }
+
+[data-theme="dark"][data-accent="orange"]  { --accent-soft: #3A1A0A; --accent-soft-ink: #FFB58F; }
+[data-theme="dark"][data-accent="amber"]   { --accent-soft: #2C2410; --accent-soft-ink: #F8D27A; }
+[data-theme="dark"][data-accent="lime"]    { --accent-soft: #1F2A07; --accent-soft-ink: #D6F26E; }
+[data-theme="dark"][data-accent="electric"]{ --accent-soft: #0F1A3D; --accent-soft-ink: #A9BEFF; }
+[data-theme="dark"][data-accent="magenta"] { --accent-soft: #321020; --accent-soft-ink: #FFA3C4; }
+
+/* Density */
+[data-density="compact"] {
+  --s-3: 8px; --s-4: 12px; --s-5: 14px; --s-6: 16px; --s-8: 22px;
+  --row-h: 32px; --row-h-sm: 26px;
+}
+
+/* Engram app shell helpers */
+.eg-mono { font-family: var(--font-mono); font-feature-settings: "zero","ss01"; letter-spacing: -0.01em; }
+.eg-cap  { font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 10.5px; color: var(--ink-3); }
+.eg-display { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.025em; }
+
+.eg-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 12px;
+  font-family: var(--font-sans); font-size: 13px; font-weight: 500;
+  border: 1px solid var(--line-2); background: var(--surface); color: var(--ink);
+  border-radius: var(--r-2); cursor: pointer; user-select: none;
+  transition: background 80ms, border-color 80ms;
+}
+.eg-btn:hover { background: var(--surface-2); }
+.eg-btn[data-variant="primary"] {
+  background: var(--ink); color: var(--bg); border-color: var(--ink);
+}
+.eg-btn[data-variant="primary"]:hover { background: var(--ink-2); }
+.eg-btn[data-variant="accent"] {
+  background: var(--accent); color: var(--accent-ink); border-color: var(--accent);
+}
+.eg-btn[data-variant="ghost"] { border-color: transparent; background: transparent; }
+.eg-btn[data-variant="ghost"]:hover { background: var(--surface-2); }
+.eg-btn[data-size="sm"] { height: 26px; font-size: 12px; padding: 0 8px; }
+.eg-btn[data-size="lg"] { height: 40px; font-size: 14px; padding: 0 16px; }
+
+.eg-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 20px; padding: 0 7px;
+  font-family: var(--font-mono); font-size: 10.5px;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  border-radius: var(--r-1);
+  background: var(--surface-2); color: var(--ink-2);
+  border: 1px solid var(--line);
+}
+.eg-chip[data-tone="green"]  { background: var(--green-soft); color: var(--green); border-color: transparent; }
+.eg-chip[data-tone="amber"]  { background: var(--amber-soft); color: var(--amber); border-color: transparent; }
+.eg-chip[data-tone="red"]    { background: var(--red-soft); color: var(--red); border-color: transparent; }
+.eg-chip[data-tone="blue"]   { background: var(--blue-soft); color: var(--blue); border-color: transparent; }
+.eg-chip[data-tone="accent"] { background: var(--accent-soft); color: var(--accent-soft-ink); border-color: transparent; }
+.eg-chip[data-tone="ink"]    { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+.eg-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.eg-dot[data-tone="green"]  { background: var(--green); }
+.eg-dot[data-tone="amber"]  { background: var(--amber); }
+.eg-dot[data-tone="red"]    { background: var(--red); }
+.eg-dot[data-tone="ink"]    { background: var(--ink); }
+.eg-dot[data-tone="accent"] { background: var(--accent); }
+
+.eg-kbd {
+  font-family: var(--font-mono); font-size: 10.5px;
+  padding: 1px 5px; border-radius: 3px;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-3);
+}
+
+.eg-hairline { border: 1px solid var(--line); }
+.eg-hairline-b { border-bottom: 1px solid var(--line); }
+.eg-hairline-t { border-top: 1px solid var(--line); }
+.eg-hairline-r { border-right: 1px solid var(--line); }
+
+.eg-card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-3);
+}
+
+.eg-input {
+  height: 34px; padding: 0 10px;
+  font-family: var(--font-sans); font-size: 13px;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line-2); border-radius: var(--r-2);
+  outline: none; width: 100%;
+}
+.eg-input:focus { border-color: var(--ink); }
+
+.eg-progress {
+  position: relative; height: 4px; width: 100%;
+  background: var(--surface-3); border-radius: var(--r-pill); overflow: hidden;
+}
+.eg-progress > i {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  background: var(--ink); border-radius: var(--r-pill);
+  font-style: normal;
+}
+.eg-progress[data-tone="accent"] > i { background: var(--accent); }
+.eg-progress[data-tone="green"] > i { background: var(--green); }
+
+.eg-silk {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono); text-transform: uppercase;
+  font-size: 9.5px; letter-spacing: 0.12em;
+  color: var(--ink-4);
+}
+.eg-silk::before, .eg-silk::after {
+  content: ""; display: inline-block; height: 1px; flex: 1; min-width: 8px; background: var(--line-2);
+}
+
+.eg-numtag {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.06em;
+  color: var(--ink-4); text-transform: uppercase;
+}
+.eg-numtag b { color: var(--ink); font-weight: 600; }
+
+/* Scrollbar subtle */
+.eg-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.eg-scroll::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 4px; }
+.eg-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* Streaming pulse animation */
+@keyframes egPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}

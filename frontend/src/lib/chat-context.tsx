@@ -50,6 +50,7 @@ interface ChatState {
   sendMessage: (text: string) => Promise<void>;
   loadConversation: (id: string) => Promise<void>;
   loadConversations: () => Promise<void>;
+  deleteConversation: (id: string) => Promise<void>;
   newChat: () => void;
 }
 
@@ -92,6 +93,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setCurrentConversationId(null);
     setCurrentSources([]);
   }, []);
+
+  const deleteConversation = useCallback(async (id: string) => {
+    await apiFetch(`/api/chat/conversations/${id}`, { method: "DELETE" });
+    setConversations((prev) => prev.filter((c) => c.id !== id));
+    if (currentConversationId === id) {
+      setMessages([]);
+      setCurrentConversationId(null);
+      setCurrentSources([]);
+    }
+  }, [currentConversationId]);
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -212,6 +223,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         sendMessage,
         loadConversation,
         loadConversations,
+        deleteConversation,
         newChat,
       }}
     >

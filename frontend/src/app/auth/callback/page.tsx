@@ -28,8 +28,15 @@ export default function AuthCallbackPage() {
   }, [router]);
 
   return (
-    <div className="flex h-full items-center justify-center">
-      <p className="text-muted-foreground">Signing in...</p>
+    <div
+      className="v3-screen v3-scan"
+      data-theme="dark"
+      data-accent="phosphor"
+      style={{ alignItems: "center", justifyContent: "center" }}
+    >
+      <p style={{ color: "var(--ink-3)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+        signing in...
+      </p>
     </div>
   );
 }

@@ -219,17 +219,7 @@ def ingest_notion_workspace(
         with SyncSession() as session:
             _update_job(session, jid, status="processing", progress=0.0)
 
-        # D27: delete existing Notion documents for this user
-        with SyncSession() as session:
-            session.execute(
-                delete(Document).where(
-                    Document.user_id == uid,
-                    Document.source == "notion",
-                )
-            )
-            session.commit()
-
-        # Fetch all pages
+        # Fetch all pages (delete old docs after new ones are ready)
         pages = _fetch_all_pages(notion_api_key)
         total_pages = len(pages)
 
@@ -241,7 +231,8 @@ def ingest_notion_workspace(
                 _update_job(session, jid, status="complete", progress=1.0)
             return
 
-        # Process each page
+        # Process each page — collect new docs, then swap old for new atomically
+        new_doc_ids: list[uuid.UUID] = []
         with SyncSession() as session:
             for i, page in enumerate(pages):
                 page_id = page["id"]
@@ -270,6 +261,7 @@ def ingest_notion_workspace(
                 )
                 session.add(doc)
                 session.flush()
+                new_doc_ids.append(doc.id)
 
                 # Chunk — treat as markdown since we converted to markdown-ish text
                 chunks = chunk_file(text, f"{title}.md")
@@ -294,6 +286,14 @@ def ingest_notion_workspace(
                 if (i + 1) % 5 == 0 or (i + 1) == total_pages:
                     _update_job(session, jid, progress=progress, documents_indexed=i + 1)
 
+            # Delete old Notion docs (swap: old removed, new added in same commit)
+            session.execute(
+                delete(Document).where(
+                    Document.user_id == uid,
+                    Document.source == "notion",
+                    Document.id.notin_(new_doc_ids),
+                )
+            )
             session.commit()
 
         # Dispatch embedding task (D22)

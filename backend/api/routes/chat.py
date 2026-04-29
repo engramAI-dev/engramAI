@@ -201,3 +201,75 @@ async def get_conversation_messages(
             for msg in messages
         ]
     )
+
+
+@router.delete("/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_conversation(
+    conversation_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Delete a conversation and all its messages."""
+    uid = uuid.UUID(user.id)
+    conv_id = uuid.UUID(conversation_id)
+
+    # Verify ownership
+    conv_result = await session.execute(
+        select(Conversation).where(
+            Conversation.id == conv_id,
+            Conversation.user_id == uid,
+        )
+    )
+    if not conv_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
+        )
+
+    from sqlalchemy import delete
+    from models.output import Output
+
+    # Delete outputs referencing this conversation's messages first (FK constraint)
+    await session.execute(
+        delete(Output).where(Output.conversation_id == conv_id)
+    )
+    # Then messages, then conversation
+    await session.execute(delete(Message).where(Message.conversation_id == conv_id))
+    await session.execute(delete(Conversation).where(Conversation.id == conv_id))
+    await session.commit()
+
+
+@router.get("/usage")
+async def get_usage(
+    user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Get usage stats for the current user."""
+    uid = uuid.UUID(user.id)
+
+    # Count messages
+    msg_count = await session.execute(
+        select(func.count(Message.id))
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .where(Conversation.user_id == uid)
+    )
+    total_messages = msg_count.scalar_one()
+
+    # Sum tokens
+    token_result = await session.execute(
+        select(
+            func.coalesce(func.sum(Message.input_tokens), 0),
+            func.coalesce(func.sum(Message.output_tokens), 0),
+        )
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .where(Conversation.user_id == uid)
+    )
+    row = token_result.one()
+    total_input = row[0]
+    total_output = row[1]
+
+    return {
+        "messages": total_messages,
+        "input_tokens": total_input,
+        "output_tokens": total_output,
+    }

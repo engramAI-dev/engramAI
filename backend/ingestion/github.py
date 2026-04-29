@@ -110,15 +110,7 @@ def ingest_github_repo(
         with SyncSession() as session:
             _update_job(session, jid, status="processing", progress=0.0)
 
-        # D27: delete existing documents for this repo+user
-        with SyncSession() as session:
-            session.execute(
-                delete(Document).where(
-                    Document.user_id == uid,
-                    Document.repo == repo_slug,
-                )
-            )
-            session.commit()
+        # D27: old docs deleted after new ones are inserted (same transaction)
 
         # Clone
         tmp_dir = tempfile.mkdtemp(prefix="engram_")
@@ -140,7 +132,8 @@ def ingest_github_repo(
                 _update_job(session, jid, status="complete", progress=1.0)
             return
 
-        # Chunk each file
+        # Chunk each file — collect new doc IDs, delete old after insert
+        new_doc_ids: list[uuid.UUID] = []
         with SyncSession() as session:
             for i, full_path in enumerate(files):
                 rel_path = os.path.relpath(full_path, repo_dir)
@@ -166,6 +159,7 @@ def ingest_github_repo(
                 )
                 session.add(doc)
                 session.flush()  # get doc.id
+                new_doc_ids.append(doc.id)
 
                 # Chunk content
                 chunks = chunk_file(content, rel_path)
@@ -186,6 +180,15 @@ def ingest_github_repo(
                 if (i + 1) % 10 == 0 or (i + 1) == total_files:
                     _update_job(session, jid, progress=progress, documents_indexed=i + 1)
 
+            # Delete old docs for this repo (swap in same transaction)
+            if new_doc_ids:
+                session.execute(
+                    delete(Document).where(
+                        Document.user_id == uid,
+                        Document.repo == repo_slug,
+                        Document.id.notin_(new_doc_ids),
+                    )
+                )
             session.commit()
 
         # Dispatch embedding task (D22: two-task pipeline)

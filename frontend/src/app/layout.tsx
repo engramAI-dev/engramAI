@@ -17,6 +17,10 @@ export const metadata: Metadata = {
   description: "Engineering intelligence platform",
 };
 
+/**
+ * Root layout — provides fonts and base styles only.
+ * Auth and chat providers live in the (app) route group layout.
+ */
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -27,6 +31,14 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Inter+Tight:ital,wght@0,100..900;1,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap"
+          rel="stylesheet"
+        />
+      </head>
       <body className="h-full">{children}</body>
     </html>
   );
