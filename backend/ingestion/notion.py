@@ -27,6 +27,11 @@ _NOTION_BASE_URL = "https://api.notion.com/v1"
 # pathological structures. 10 covers any realistic doc.
 _MAX_BLOCK_DEPTH = 10
 
+# Block types that own a separate top-level page in Notion. Their content is
+# ingested independently via _fetch_all_pages, so recursing into them here
+# would duplicate the same blocks under multiple parent documents.
+_OPAQUE_CHILD_BLOCK_TYPES = frozenset({"child_page", "child_database"})
+
 # Notion's published rate limit is ~3 req/s. Larger workspaces will hit 429s
 # during pagination + recursive block fetching; honor Retry-After so the whole
 # job doesn't fail on a single throttle.
@@ -134,7 +139,11 @@ def _fetch_block_children(
 
         for block in data.get("results", []):
             blocks.append(block)
-            if depth < _MAX_BLOCK_DEPTH and block.get("has_children"):
+            if (
+                depth < _MAX_BLOCK_DEPTH
+                and block.get("has_children")
+                and block.get("type") not in _OPAQUE_CHILD_BLOCK_TYPES
+            ):
                 child_id = block.get("id")
                 if not child_id:
                     continue

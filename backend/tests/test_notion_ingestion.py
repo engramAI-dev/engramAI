@@ -405,6 +405,67 @@ def test_fetch_block_children_recurses_into_nested_blocks(monkeypatch) -> None:
     assert block_ids == ["tog-1", "p-inside"]
 
 
+def test_fetch_block_children_does_not_recurse_into_child_pages(monkeypatch) -> None:
+    """Regression: child_page blocks own a separate top-level page.
+
+    Recursing into them would inline the child page's content under the
+    parent document, duplicating the same blocks across multiple docs.
+    """
+    responses = {
+        "parent": {
+            "results": [
+                {
+                    "id": "p-own",
+                    "type": "paragraph",
+                    "has_children": False,
+                    "paragraph": {"rich_text": [{"plain_text": "Parent text."}]},
+                },
+                {
+                    "id": "child-page-1",
+                    "type": "child_page",
+                    "has_children": True,
+                    "child_page": {"title": "Sub page"},
+                },
+                {
+                    "id": "child-db-1",
+                    "type": "child_database",
+                    "has_children": True,
+                    "child_database": {"title": "Sub database"},
+                },
+            ],
+            "has_more": False,
+        },
+        # If recursion misbehaves and queries these, the test fails because
+        # the child block IDs would appear in the returned list.
+        "child-page-1": {
+            "results": [
+                {"id": "leaked-p", "type": "paragraph", "has_children": False,
+                 "paragraph": {"rich_text": [{"plain_text": "Should not appear."}]}}
+            ],
+            "has_more": False,
+        },
+        "child-db-1": {
+            "results": [
+                {"id": "leaked-db-row", "type": "paragraph", "has_children": False,
+                 "paragraph": {"rich_text": [{"plain_text": "Also should not appear."}]}}
+            ],
+            "has_more": False,
+        },
+    }
+
+    def fake_get(url, headers, timeout):
+        bid = url.split("/blocks/", 1)[1].split("/", 1)[0]
+        return _FakeResponse(responses[bid])
+
+    monkeypatch.setattr("ingestion.notion.httpx.get", fake_get)
+
+    blocks = _fetch_block_children("parent", "fake-key")
+    block_ids = [b["id"] for b in blocks]
+    assert block_ids == ["p-own", "child-page-1", "child-db-1"]
+    assert "leaked-p" not in block_ids
+    assert "leaked-db-row" not in block_ids
+
+
 def test_fetch_block_children_respects_max_depth(monkeypatch) -> None:
     """Pathological nesting must not recurse forever."""
     from ingestion import notion as notion_module
