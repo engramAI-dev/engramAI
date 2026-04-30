@@ -6,6 +6,7 @@ or database traversal for MVP.
 """
 
 import logging
+import time
 import uuid
 
 import httpx
@@ -22,6 +23,59 @@ logger = logging.getLogger(__name__)
 
 _NOTION_API_VERSION = "2022-06-28"
 _NOTION_BASE_URL = "https://api.notion.com/v1"
+# Notion supports arbitrary nesting; cap recursion to avoid runaway calls on
+# pathological structures. 10 covers any realistic doc.
+_MAX_BLOCK_DEPTH = 10
+
+# Notion's published rate limit is ~3 req/s. Larger workspaces will hit 429s
+# during pagination + recursive block fetching; honor Retry-After so the whole
+# job doesn't fail on a single throttle.
+_RATE_LIMIT_MAX_RETRIES = 5
+_RATE_LIMIT_DEFAULT_BACKOFF = 1.0
+
+
+def _notion_request(
+    method: str,
+    url: str,
+    api_key: str,
+    json_body: dict | None = None,
+) -> httpx.Response:
+    """Make a Notion API call, retrying on 429 with Retry-After backoff."""
+    headers = _notion_headers(api_key)
+    last_resp: httpx.Response | None = None
+
+    for attempt in range(_RATE_LIMIT_MAX_RETRIES):
+        if method == "GET":
+            resp = httpx.get(url, headers=headers, timeout=30)
+        else:
+            resp = httpx.post(url, headers=headers, json=json_body, timeout=30)
+        last_resp = resp
+
+        if resp.status_code != 429:
+            resp.raise_for_status()
+            return resp
+
+        retry_after = resp.headers.get("Retry-After")
+        try:
+            delay = (
+                float(retry_after)
+                if retry_after
+                else _RATE_LIMIT_DEFAULT_BACKOFF * (2**attempt)
+            )
+        except ValueError:
+            delay = _RATE_LIMIT_DEFAULT_BACKOFF * (2**attempt)
+        logger.warning(
+            "Notion 429 (attempt %d/%d), sleeping %.1fs",
+            attempt + 1,
+            _RATE_LIMIT_MAX_RETRIES,
+            delay,
+        )
+        time.sleep(delay)
+
+    # Out of retries — surface the last response as an error.
+    assert last_resp is not None
+    last_resp.raise_for_status()
+    return last_resp
 
 
 def _notion_headers(api_key: str) -> dict[str, str]:
@@ -35,7 +89,6 @@ def _notion_headers(api_key: str) -> dict[str, str]:
 def _fetch_all_pages(api_key: str) -> list[dict]:
     """Search for all pages in the workspace (no recursion — D25)."""
     pages: list[dict] = []
-    headers = _notion_headers(api_key)
     start_cursor = None
 
     while True:
@@ -43,13 +96,9 @@ def _fetch_all_pages(api_key: str) -> list[dict]:
         if start_cursor:
             body["start_cursor"] = start_cursor
 
-        resp = httpx.post(
-            f"{_NOTION_BASE_URL}/search",
-            headers=headers,
-            json=body,
-            timeout=30,
+        resp = _notion_request(
+            "POST", f"{_NOTION_BASE_URL}/search", api_key, json_body=body
         )
-        resp.raise_for_status()
         data = resp.json()
 
         pages.extend(data.get("results", []))
@@ -61,10 +110,18 @@ def _fetch_all_pages(api_key: str) -> list[dict]:
     return pages
 
 
-def _fetch_block_children(page_id: str, api_key: str) -> list[dict]:
-    """Fetch direct children blocks of a page (flat, not recursive — D25)."""
+def _fetch_block_children(
+    page_id: str, api_key: str, depth: int = 0
+) -> list[dict]:
+    """Fetch direct children blocks of a page, recursively expanding any
+    block that has children of its own (toggles, callouts, list items with
+    sub-content, etc.) so nested text is preserved.
+
+    Returns blocks in DFS document order: each parent is immediately followed
+    by its descendants. Each block keeps its own Notion block id, so citation
+    anchors point to the actual cited block regardless of nesting depth.
+    """
     blocks: list[dict] = []
-    headers = _notion_headers(api_key)
     start_cursor = None
 
     while True:
@@ -72,11 +129,23 @@ def _fetch_block_children(page_id: str, api_key: str) -> list[dict]:
         if start_cursor:
             url += f"&start_cursor={start_cursor}"
 
-        resp = httpx.get(url, headers=headers, timeout=30)
-        resp.raise_for_status()
+        resp = _notion_request("GET", url, api_key)
         data = resp.json()
 
-        blocks.extend(data.get("results", []))
+        for block in data.get("results", []):
+            blocks.append(block)
+            if depth < _MAX_BLOCK_DEPTH and block.get("has_children"):
+                child_id = block.get("id")
+                if not child_id:
+                    continue
+                try:
+                    blocks.extend(
+                        _fetch_block_children(child_id, api_key, depth + 1)
+                    )
+                except httpx.HTTPStatusError:
+                    logger.warning(
+                        "Could not fetch nested blocks under %s", child_id
+                    )
 
         if not data.get("has_more"):
             break
@@ -98,23 +167,78 @@ def _blocks_to_text(blocks: list[dict]) -> tuple[str, list[tuple[int, str]]]:
     Citations later use this to build a `#<block-id>` anchor that jumps
     straight to the cited block in Notion's UI.
     """
-    lines: list[str] = []
-    block_starts: list[tuple[int, str]] = []
+    # Build the joined output incrementally so we can vary the separator between
+    # blocks: most pairs use a blank line ("\n\n"), but consecutive table_row
+    # emits join with a single "\n" so markdown table rendering isn't broken by
+    # blank lines between data rows.
+    joined: list[str] = []  # each entry is `separator + block_text` in order
+    block_starts: list[tuple[int, str]] = []  # (0-based text line of block start, block_id)
+    prev_was_table_row = False
 
-    def _emit(block_id: str, *new_lines: str) -> None:
-        # \n\n join inserts a blank line between entries, so each new
-        # entry begins at index = len(lines) * 2 in the final string's
-        # line list. We track logical entry start as len(lines) and let
-        # callers convert.
+    def _emit(block_id: str, *new_lines: str, is_table_row: bool = False) -> None:
+        nonlocal prev_was_table_row
         if not new_lines:
             return
-        block_starts.append((len(lines), block_id))
-        lines.extend(new_lines)
+        block_text = "\n".join(new_lines)
+
+        if not joined:
+            sep = ""
+            text_line = 0
+        elif prev_was_table_row and is_table_row:
+            # Consecutive table rows — single newline keeps the markdown table contiguous.
+            sep = "\n"
+            so_far = "".join(joined)
+            text_line = so_far.count("\n") + 1
+        else:
+            # Standard inter-block separator: blank line.
+            sep = "\n\n"
+            so_far = "".join(joined)
+            text_line = so_far.count("\n") + 2
+
+        block_starts.append((text_line, block_id))
+        joined.append(sep + block_text)
+        prev_was_table_row = is_table_row
+
+    # Track whether we're inside a table region so consecutive table_row blocks
+    # can be rendered as pipe-markdown with a header separator after row 1.
+    table_active = False
+    table_header_pending = False
 
     for block in blocks:
         btype = block.get("type", "")
         block_data = block.get(btype, {})
         bid = block.get("id", "")
+
+        # A non-table_row block ends any in-progress table region.
+        if table_active and btype != "table_row":
+            table_active = False
+            table_header_pending = False
+
+        if btype == "table":
+            # The parent table block carries metadata but no rich_text; its
+            # visible content lives in child table_row blocks, which follow in
+            # DFS order thanks to recursive fetching.
+            table_active = True
+            table_header_pending = block_data.get("has_column_header", False)
+            continue
+
+        if btype == "table_row":
+            cells = block_data.get("cells", [])
+            cell_texts = [
+                _extract_text_from_rich_text(cell)
+                .replace("|", "\\|")
+                .replace("\n", " ")
+                .strip()
+                for cell in cells
+            ]
+            row_md = "| " + " | ".join(cell_texts) + " |"
+            if table_header_pending and cell_texts:
+                separator = "| " + " | ".join(["---"] * len(cell_texts)) + " |"
+                _emit(bid, row_md, separator, is_table_row=True)
+                table_header_pending = False
+            else:
+                _emit(bid, row_md, is_table_row=True)
+            continue
 
         if btype in ("paragraph", "quote", "callout", "toggle"):
             text = _extract_text_from_rich_text(block_data.get("rich_text", []))
@@ -154,13 +278,10 @@ def _blocks_to_text(blocks: list[dict]) -> tuple[str, list[tuple[int, str]]]:
         elif btype == "divider":
             _emit(bid, "---")
 
-        # Skip unsupported types: image, embed, table, child_page, etc.
+        # Skip unsupported types: image, embed, child_page, child_database, etc.
 
-    text = "\n\n".join(lines)
-    # Convert "entry index" to actual line index in the joined text.
-    # Entry i starts at line i*2 because \n\n is a one-blank-line separator.
-    line_to_block = [(entry_idx * 2, bid) for entry_idx, bid in block_starts]
-    return text, line_to_block
+    text = "".join(joined)
+    return text, block_starts
 
 
 def _block_id_for_line(line_to_block: list[tuple[int, str]], line: int) -> str | None:
