@@ -14,7 +14,11 @@ from mcp.server import Server
 from mcp.types import TextContent, Tool
 
 from mcp_plugin.client import EngramClient
-from mcp_plugin.formatting import format_document, format_search_results
+from mcp_plugin.formatting import (
+    format_citations,
+    format_document,
+    format_search_results,
+)
 
 TOOLS: list[Tool] = [
     Tool(
@@ -40,6 +44,16 @@ TOOLS: list[Tool] = [
                     "enum": ["github", "notion"],
                     "description": "Optional source filter.",
                 },
+                "intent": {
+                    "type": "string",
+                    "enum": ["explain", "generate", "question"],
+                    "description": (
+                        "Optional response shaping. 'generate' floats code "
+                        "results above docs; 'question' floats docs above "
+                        "code; 'explain' keeps default ranking. Format-only "
+                        "— retrieval scores are not changed."
+                    ),
+                },
             },
             "required": ["query"],
         },
@@ -54,8 +68,43 @@ TOOLS: list[Tool] = [
             "type": "object",
             "properties": {
                 "document_id": {"type": "string"},
+                "context_lines": {
+                    "type": "integer",
+                    "description": (
+                        "Lines of surrounding context to include alongside "
+                        "each chunk. 0 returns chunks as-stored. Capped at 50."
+                    ),
+                    "minimum": 0,
+                    "maximum": 50,
+                    "default": 0,
+                },
             },
             "required": ["document_id"],
+        },
+    ),
+    Tool(
+        name="cite",
+        description=(
+            "Return locators only (source, path, line range, URL) for an "
+            "answer the LLM has already drafted. Cheaper on context than "
+            "`search_knowledge` when previews aren't needed."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Topic or claim to cite — the answer text.",
+                },
+                "top_k": {
+                    "type": "integer",
+                    "description": "Max citations (default 5, max 20).",
+                    "minimum": 1,
+                    "maximum": 20,
+                    "default": 5,
+                },
+            },
+            "required": ["query"],
         },
     ),
 ]
@@ -83,8 +132,17 @@ async def _dispatch(client: EngramClient, name: str, arguments: dict[str, Any]) 
             top_k=arguments.get("top_k", 10),
             source=arguments.get("source"),
         )
-        return format_search_results(chunks)
+        return format_search_results(chunks, intent=arguments.get("intent"))
+    if name == "cite":
+        chunks = await client.search_knowledge(
+            query=arguments["query"],
+            top_k=arguments.get("top_k", 5),
+        )
+        return format_citations(chunks)
     if name == "fetch_document":
-        doc = await client.fetch_document(arguments["document_id"])
+        doc = await client.fetch_document(
+            arguments["document_id"],
+            context_lines=arguments.get("context_lines", 0),
+        )
         return format_document(doc)
     raise ValueError(f"Unknown tool: {name}")

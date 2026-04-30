@@ -33,10 +33,16 @@ class EngramClient:
             r.raise_for_status()
             return r.json().get("chunks", [])
 
-    async def fetch_document(self, document_id: str) -> dict[str, Any]:
+    async def fetch_document(
+        self, document_id: str, context_lines: int = 0
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {}
+        if context_lines:
+            params["context_lines"] = context_lines
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             r = await client.get(
                 f"{self._base_url}/api/documents/{document_id}",
+                params=params,
                 headers=self._headers,
             )
             r.raise_for_status()

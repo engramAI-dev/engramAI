@@ -77,9 +77,57 @@ async def list_documents(
     }
 
 
+def _build_line_map(chunks: list[Chunk]) -> dict[int, str]:
+    """Reconstruct {line_no: line_text} from per-chunk contents.
+
+    Chunks may overlap or have gaps; later chunks win on conflict (rare,
+    but deterministic by chunk_index since callers pre-order). Notion
+    chunks lacking start_line are skipped — padding is meaningless there.
+    """
+    lines: dict[int, str] = {}
+    for c in chunks:
+        if c.start_line is None:
+            continue
+        for i, text in enumerate(c.content.splitlines()):
+            lines[c.start_line + i] = text
+    return lines
+
+
+def _pad_chunk(
+    chunk: Chunk, line_map: dict[int, str], context_lines: int
+) -> dict[str, int | str | None]:
+    """Compute padded slice for a single chunk. Skips missing lines silently."""
+    if chunk.start_line is None or chunk.end_line is None:
+        return {
+            "padded_content": None,
+            "padded_start_line": None,
+            "padded_end_line": None,
+        }
+    padded_start = max(1, chunk.start_line - context_lines)
+    padded_end = chunk.end_line + context_lines
+    rendered = "\n".join(
+        line_map[n] for n in range(padded_start, padded_end + 1) if n in line_map
+    )
+    return {
+        "padded_content": rendered,
+        "padded_start_line": padded_start,
+        "padded_end_line": padded_end,
+    }
+
+
 @router.get("/{document_id}")
 async def get_document(
     document_id: str,
+    context_lines: int = Query(
+        0,
+        ge=0,
+        le=50,
+        description=(
+            "Lines of surrounding context to include alongside each chunk. "
+            "Adds padded_content / padded_start_line / padded_end_line "
+            "fields when >0. Capped at 50."
+        ),
+    ),
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -104,7 +152,21 @@ async def get_document(
         .where(Chunk.document_id == doc.id)
         .order_by(Chunk.chunk_index)
     )
-    chunks = chunks_result.scalars().all()
+    chunks = list(chunks_result.scalars().all())
+    line_map = _build_line_map(chunks) if context_lines else {}
+
+    chunk_payload: list[dict] = []
+    for c in chunks:
+        entry: dict = {
+            "id": str(c.id),
+            "content": c.content,
+            "start_line": c.start_line,
+            "end_line": c.end_line,
+            "chunk_type": c.chunk_type,
+        }
+        if context_lines:
+            entry.update(_pad_chunk(c, line_map, context_lines))
+        chunk_payload.append(entry)
 
     return {
         "id": str(doc.id),
@@ -115,14 +177,5 @@ async def get_document(
         "url": doc.url,
         "language": doc.language,
         "indexed_at": doc.indexed_at.isoformat() if doc.indexed_at else None,
-        "chunks": [
-            {
-                "id": str(c.id),
-                "content": c.content,
-                "start_line": c.start_line,
-                "end_line": c.end_line,
-                "chunk_type": c.chunk_type,
-            }
-            for c in chunks
-        ],
+        "chunks": chunk_payload,
     }
