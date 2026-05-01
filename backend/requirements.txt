@@ -1,26 +1,27 @@
 # Web framework
-fastapi>=0.115.0
-uvicorn[standard]>=0.32.0
-pydantic>=2.10.0
-pydantic-settings>=2.6.0
+fastapi>=0.136.0
+uvicorn[standard]>=0.46.0
+pydantic>=2.13.0
+pydantic-settings>=2.14.0
 
 # Database
-sqlalchemy>=2.0.36
-asyncpg>=0.30.0
-# psycopg2 is used only by alembic migrations (sync env); the app runs async on asyncpg.
-psycopg2-binary>=2.9.10
-alembic>=1.14.0
-pgvector>=0.3.6
+sqlalchemy>=2.0.49
+asyncpg>=0.31.0
+psycopg2-binary>=2.9.12
+alembic>=1.18.0
+pgvector>=0.4.2
 
 # Auth
-httpx>=0.28.0
-python-jose[cryptography]>=3.3.0
+httpx>=0.28.1
+python-jose[cryptography]>=3.5.0
 
 # LLM (D45: configurable provider)
-google-genai>=1.0.0    # Gemini (free tier, default)
-anthropic>=0.39.0      # Claude (paid, set LLM_PROVIDER=anthropic)
-sentence-transformers>=3.0.0
-einops>=0.8.0          # transitive: required by nomic-bert embedding model
+google-genai>=1.74.0     # Gemini (free tier, default)
+anthropic>=0.97.0        # Claude (paid, set LLM_PROVIDER=anthropic)
+
+# Embeddings (D44: local model)
+sentence-transformers>=5.4.0
+einops>=0.8.2            # required by nomic-embed model
 
 # Code post-processing (B3)
 # tree-sitter pinned: tree-sitter-languages 1.10.x ships grammars compiled
@@ -29,16 +30,16 @@ tree-sitter==0.21.3
 tree-sitter-languages>=1.10.2
 
 # Task queue
-celery[redis]>=5.4.0
+celery[redis]>=5.6.0
 
 # MCP plugin (B14)
 mcp>=1.0.0
 
 # Utilities
-python-dotenv>=1.0.1
+python-dotenv>=1.2.0
 python-multipart>=0.0.12
 
 # Dev / Testing
-pytest>=8.3.0
-pytest-asyncio>=0.24.0
-ruff>=0.8.0
+pytest>=9.0.0
+pytest-asyncio>=1.3.0
+ruff>=0.15.0
