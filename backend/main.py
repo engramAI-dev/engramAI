@@ -5,8 +5,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
-from api.routes import auth, chat, documents, ingest, knowledge, outputs, providers
-from api.usage_middleware import usage_tracking_middleware
+from logging_setup import setup_logging
+from sentry_setup import init_sentry
+
+# Initialize structured logging before importing any module that may instantiate
+# loggers at import time. Late imports below are intentional — ruff E402 is muted.
+setup_logging(level=settings.log_level)
+init_sentry(settings.sentry_dsn, settings.app_env)
+
+from api.routes import auth, chat, documents, ingest, knowledge, outputs, providers  # noqa: E402
+from api.request_id_middleware import request_id_middleware  # noqa: E402
+from api.usage_middleware import usage_tracking_middleware  # noqa: E402
 
 
 @asynccontextmanager
@@ -32,7 +41,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Order matters — last-registered middleware runs OUTERMOST. We want
+# request_id outermost so it sets the contextvar before usage_tracking
+# (and any inner middleware/route) emits a log line.
 app.middleware("http")(usage_tracking_middleware)
+app.middleware("http")(request_id_middleware)
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])

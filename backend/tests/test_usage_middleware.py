@@ -1,10 +1,11 @@
 """B13 — usage tracking middleware tests.
 
 Hermetic: mount middleware on a minimal FastAPI app, drive with TestClient,
-capture `engram.usage` logger output.
+capture `engram.usage` logger output. Fields are read off the LogRecord
+directly (since the middleware now emits via `logger.info(msg, extra=...)`
+and the JSON rendering happens in JSONFormatter).
 """
 
-import json
 import logging
 import time
 from typing import Any
@@ -42,10 +43,10 @@ def app_with_middleware() -> FastAPI:
     return app
 
 
-def _captured(caplog: pytest.LogCaptureFixture) -> dict[str, Any]:
+def _captured(caplog: pytest.LogCaptureFixture) -> logging.LogRecord:
     records = [r for r in caplog.records if r.name == "engram.usage"]
     assert records, "expected at least one engram.usage log record"
-    return json.loads(records[-1].message)
+    return records[-1]
 
 
 def test_logs_basic_request(
@@ -57,14 +58,14 @@ def test_logs_basic_request(
     assert response.status_code == 200
 
     record = _captured(caplog)
-    assert record["event"] == "http_request"
-    assert record["path"] == "/ok"
-    assert record["method"] == "GET"
-    assert record["status"] == 200
-    assert record["user_id"] is None
-    assert record["input_tokens"] is None
-    assert record["output_tokens"] is None
-    assert record["duration_ms"] >= 0
+    assert record.getMessage() == "http_request"
+    assert record.path == "/ok"
+    assert record.method == "GET"
+    assert record.status == 200
+    assert record.user_id is None
+    assert record.input_tokens is None
+    assert record.output_tokens is None
+    assert record.duration_ms >= 0
 
 
 def test_logs_error_status(
@@ -76,8 +77,8 @@ def test_logs_error_status(
     assert response.status_code == 500
 
     record = _captured(caplog)
-    assert record["path"] == "/boom"
-    assert record["status"] == 500
+    assert record.path == "/boom"
+    assert record.status == 500
 
 
 def test_captures_user_id_when_authenticated(
@@ -92,7 +93,7 @@ def test_captures_user_id_when_authenticated(
     assert response.status_code == 200
 
     record = _captured(caplog)
-    assert record["user_id"] == "u42"
+    assert record.user_id == "u42"
 
 
 def test_captures_usage_counts_when_route_sets_them(
@@ -104,8 +105,8 @@ def test_captures_usage_counts_when_route_sets_them(
     assert response.status_code == 200
 
     record = _captured(caplog)
-    assert record["input_tokens"] == 42
-    assert record["output_tokens"] == 7
+    assert record.input_tokens == 42
+    assert record.output_tokens == 7
 
 
 def test_unauthenticated_401_still_logged(
@@ -117,5 +118,5 @@ def test_unauthenticated_401_still_logged(
     assert response.status_code == 401
 
     record = _captured(caplog)
-    assert record["status"] == 401
-    assert record["user_id"] is None
+    assert record.status == 401
+    assert record.user_id is None

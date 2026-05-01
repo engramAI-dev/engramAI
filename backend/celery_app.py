@@ -7,6 +7,12 @@ Uses Redis broker from settings.
 from celery import Celery
 
 from config import settings
+from logging_setup import setup_logging
+from sentry_setup import init_sentry
+
+# Worker process needs the same observability wiring as the API.
+setup_logging(level=settings.log_level)
+init_sentry(settings.sentry_dsn, settings.app_env)
 
 celery = Celery(
     "engram",

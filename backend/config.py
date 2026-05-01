@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: list[str] = ["http://localhost:3000"]
 
+    # Logging / observability
+    log_level: str = "INFO"
+    sentry_dsn: str = ""
+
     model_config = {
         "env_file": ["../.env", ".env"],  # check repo root first, then backend/
         "env_file_encoding": "utf-8",

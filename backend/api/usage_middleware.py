@@ -3,15 +3,14 @@
 v1 scope: structured stdout logs only. No persistence (defer to v1.5
 when billing drives a `usage_events` table).
 
-Emits one JSON line per request to the `engram.usage` logger (stdout by default).
-Token counts are captured from `request.state.usage = {"input_tokens", "output_tokens"}`
-if set by the chat route; otherwise logged as null (A's chat engine wires this in
-a follow-up — option (c) in the B13 scoping).
+Emits one structured log entry per request via the `engram.usage` logger;
+fields land alongside ts/level/request_id when JSONFormatter is active
+(see `logging_setup.py`). Token counts come from `request.state.usage`
+if the chat route sets them; otherwise null.
 
 See `docs/v1/planning/partner-b-v1-plan.md` §Layer 2.
 """
 
-import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -36,8 +35,7 @@ async def usage_tracking_middleware(
         duration_ms = round((time.perf_counter() - start) * 1000, 2)
         user = getattr(request.state, "user", None)
         usage = getattr(request.state, "usage", None) or {}
-        record: dict[str, Any] = {
-            "event": "http_request",
+        fields: dict[str, Any] = {
             "path": request.url.path,
             "method": request.method,
             "status": status,
@@ -46,4 +44,4 @@ async def usage_tracking_middleware(
             "input_tokens": usage.get("input_tokens"),
             "output_tokens": usage.get("output_tokens"),
         }
-        logger.info(json.dumps(record))
+        logger.info("http_request", extra=fields)

@@ -35,6 +35,9 @@ celery[redis]>=5.6.0
 # MCP plugin (B14)
 mcp>=1.0.0
 
+# Observability (Lane 5 — production)
+sentry-sdk[fastapi]>=2.18.0
+
 # Utilities
 python-dotenv>=1.2.0
 python-multipart>=0.0.12

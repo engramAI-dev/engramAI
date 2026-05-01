@@ -1,10 +1,18 @@
 """Alembic migration environment.
 
 Sync env (psycopg2) even though the app runs async (asyncpg). Migrations are
-not hot-path; a sync env keeps the machinery trivial. The DB URL is derived
-from `settings.database_url` with the driver swapped to psycopg2.
+not hot-path; a sync env keeps the machinery trivial.
+
+DB URL precedence:
+  1. DATABASE_URL_DIRECT env var (preferred in production — points at the
+     direct Neon endpoint, not the pooler. Pgbouncer in transaction mode
+     rejects some DDL, so migrations must bypass it).
+  2. settings.database_url (the runtime URL, may be the pooler).
+
+In either case the asyncpg driver prefix is swapped for psycopg2.
 """
 
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -23,8 +31,9 @@ if config.config_file_name is not None:
 
 
 def _sync_db_url() -> str:
-    # settings.database_url is postgresql+asyncpg://... — swap driver for alembic.
-    return settings.database_url.replace("+asyncpg", "+psycopg2")
+    # Prefer DATABASE_URL_DIRECT in production (Neon direct endpoint, not pooler).
+    raw = os.environ.get("DATABASE_URL_DIRECT") or settings.database_url
+    return raw.replace("+asyncpg", "+psycopg2")
 
 
 config.set_main_option("sqlalchemy.url", _sync_db_url())

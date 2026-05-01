@@ -1,0 +1,36 @@
+# Local Python venv — multi-GB and never used in the container
+.venv/
+venv/
+
+# Compilation artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Testing / linting caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Runtime / local-only
+*.log
+.env
+.env.local
+
+# VCS metadata — release info comes from RAILWAY_GIT_COMMIT_SHA env var
+.git/
+.gitignore
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
