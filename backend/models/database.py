@@ -31,8 +31,23 @@ engine = create_async_engine(
 )
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
+def _to_sync_url(url: str) -> str:
+    """Convert the runtime asyncpg URL into a psycopg2-compatible one.
+
+    asyncpg accepts `ssl=require`; psycopg2 (libpq) only understands
+    `sslmode=require` and raises `invalid connection option "ssl"`
+    otherwise. We swap both the driver prefix and the SSL query param
+    so a single `DATABASE_URL` can drive both engines.
+    """
+    return (
+        url.replace("+asyncpg", "+psycopg2")
+        .replace("?ssl=", "?sslmode=")
+        .replace("&ssl=", "&sslmode=")
+    )
+
+
 # Sync engine + session (Celery workers — D24/D28)
-_sync_url = settings.database_url.replace("+asyncpg", "+psycopg2")
+_sync_url = _to_sync_url(settings.database_url)
 sync_engine = create_engine(_sync_url, echo=settings.app_env == "development")
 SyncSession = sessionmaker(sync_engine)
 
