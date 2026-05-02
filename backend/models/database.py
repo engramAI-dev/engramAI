@@ -24,10 +24,20 @@ def _async_connect_args(url: str) -> dict[str, Any]:
 
 
 # Async engine + session (FastAPI routes)
+#
+# pool_pre_ping: validate every checked-out connection with a cheap query
+# before handing it to the caller. Neon (and most managed Postgres) silently
+# closes idle TCP connections after a few minutes; without pre_ping the next
+# query on a stale pooled connection raises `could not receive data from
+# server` and the request fails. The fix is canonical SQLAlchemy guidance.
+# pool_recycle: belt-and-suspenders — proactively discard connections older
+# than 30 min so they're never even attempted past the idle window.
 engine = create_async_engine(
     settings.database_url,
     echo=settings.app_env == "development",
     connect_args=_async_connect_args(settings.database_url),
+    pool_pre_ping=True,
+    pool_recycle=1800,
 )
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -47,8 +57,15 @@ def _to_sync_url(url: str) -> str:
 
 
 # Sync engine + session (Celery workers — D24/D28)
+# Same pool-health rationale as the async engine above. Worker connections
+# sit idle between tasks, making them especially prone to silent kills.
 _sync_url = _to_sync_url(settings.database_url)
-sync_engine = create_engine(_sync_url, echo=settings.app_env == "development")
+sync_engine = create_engine(
+    _sync_url,
+    echo=settings.app_env == "development",
+    pool_pre_ping=True,
+    pool_recycle=1800,
+)
 SyncSession = sessionmaker(sync_engine)
 
 
