@@ -96,52 +96,6 @@ auth required: github oauth (read:user, repo:read)`}
             >
               continue with github {"\u2192"}
             </button>
-
-            {/* divider */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                margin: "16px 0",
-                color: "var(--ink-4)",
-                fontSize: 11,
-              }}
-            >
-              <span
-                style={{
-                  flex: 1,
-                  height: 1,
-                  background: "var(--line-2)",
-                }}
-              />
-              or
-              <span
-                style={{
-                  flex: 1,
-                  height: 1,
-                  background: "var(--line-2)",
-                }}
-              />
-            </div>
-
-            {/* email */}
-            <input
-              className="v3-input"
-              placeholder="work email or SSO link"
-              style={{ height: 30 }}
-            />
-            <button
-              className="v3-btn"
-              style={{
-                width: "100%",
-                height: 30,
-                justifyContent: "center",
-                marginTop: 10,
-              }}
-            >
-              email me a sign-in link
-            </button>
           </div>
 
           <V3StatusBar
