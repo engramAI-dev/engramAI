@@ -2,7 +2,7 @@
 
 import React, { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { V3Tag, V3TitleBar, V3StatusBar } from "@/components/engram/components";
+import { V3TitleBar, V3StatusBar } from "@/components/engram/components";
 import { apiFetch } from "@/lib/api";
 
 /* ------------------------------------------------------------------ */
@@ -26,7 +26,6 @@ interface RelatedDoc {
   source: string;
   file_path: string | null;
   content: string;
-  staleness: number;
 }
 
 /* ------------------------------------------------------------------ */
@@ -60,7 +59,7 @@ export default function ComparePage({
         const searchQuery = docData.title || docData.file_path || "";
 
         if (searchQuery) {
-          const searchResult = await apiFetch<{ chunks: { document_title: string; file_path: string | null; source: string; content_preview: string; relevance_score: number }[] }>(
+          const searchResult = await apiFetch<{ chunks: { document_title: string; file_path: string | null; source: string; content_preview: string }[] }>(
             `/api/knowledge/search?q=${encodeURIComponent(searchQuery)}&top_k=1&source=${otherSource}`
           );
           if (!cancelled && searchResult.chunks.length > 0) {
@@ -70,7 +69,6 @@ export default function ComparePage({
               source: match.source,
               file_path: match.file_path,
               content: match.content_preview,
-              staleness: 1 - match.relevance_score,
             });
           }
         }
@@ -111,9 +109,6 @@ export default function ComparePage({
 
   const docContent = doc.chunks.map((c) => c.content).join("\n\n");
   const isCode = doc.source === "github";
-  const staleness = related?.staleness ?? 0;
-  const filled = Math.round((1 - staleness) * 10);
-  const empty = 10 - filled;
 
   return (
     <div className="v3-screen v3-scan" style={{ flexDirection: "row" }}>
@@ -136,9 +131,6 @@ export default function ComparePage({
               >
                 {"\u2190 back"}
               </button>
-              <V3Tag tone={staleness > 0.5 ? "err" : staleness > 0.3 ? "warn" : "ok"}>
-                similarity {((1 - staleness) * 100).toFixed(0)}%
-              </V3Tag>
             </>
           }
         />
@@ -164,22 +156,12 @@ export default function ComparePage({
           )}
         </div>
 
-        {/* freshness meter */}
-        <div style={{
-          padding: "6px 14px", borderBottom: "1px solid var(--line)", fontSize: 10,
-          color: staleness > 0.5 ? "var(--err)" : staleness > 0.3 ? "var(--warn)" : "var(--phos)",
-          background: "var(--surface)",
-        }}>
-          freshness {"\u2588".repeat(filled)}{"\u2591".repeat(empty)} {((1 - staleness) * 100).toFixed(0)}%
-        </div>
-
         {/* split view */}
         <div style={{ flex: 1, display: "grid", gridTemplateColumns: related ? "1fr 1fr" : "1fr", overflow: "hidden", minHeight: 0 }}>
           {/* left: this document */}
           <div className="v3-scroll" style={{ overflow: "auto", borderRight: related ? "1px solid var(--ink)" : "none" }}>
             <div style={{ padding: "12px 18px" }}>
-              <V3Tag tone={isCode ? "ok" : "warn"}>{isCode ? "CODE" : "DOC"}</V3Tag>
-              <h3 style={{ fontSize: 14, margin: "10px 0 12px" }}>{doc.title}</h3>
+              <h3 style={{ fontSize: 14, margin: "0 0 12px" }}>{doc.file_path || doc.title}</h3>
               <pre style={{
                 fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 1.75,
                 color: "var(--ink-2)", whiteSpace: "pre-wrap", wordBreak: "break-word",
@@ -193,10 +175,7 @@ export default function ComparePage({
           {related && (
             <div className="v3-scroll" style={{ overflow: "auto", background: "var(--surface)" }}>
               <div style={{ padding: "12px 18px" }}>
-                <V3Tag tone={related.source === "github" ? "ok" : "warn"}>
-                  {related.source === "github" ? "CODE · TRUTH" : "DOC"}
-                </V3Tag>
-                <h3 style={{ fontSize: 14, margin: "10px 0 12px" }}>{related.title}</h3>
+                <h3 style={{ fontSize: 14, margin: "0 0 12px" }}>{related.file_path || related.title}</h3>
                 <pre style={{
                   fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 1.75,
                   color: "var(--ink-2)", whiteSpace: "pre-wrap", wordBreak: "break-word",
