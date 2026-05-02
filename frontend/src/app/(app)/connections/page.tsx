@@ -42,6 +42,7 @@ interface RepoGroup {
   chunks: number;
   lastIndexed: string;
   progress?: number;
+  error?: string;
 }
 
 interface NotionGroup {
@@ -52,6 +53,7 @@ interface NotionGroup {
   pages: number;
   chunks: number;
   lastIndexed: string;
+  error?: string;
 }
 
 // -------------------------------------------------------------------
@@ -81,6 +83,86 @@ function formatRelativeTime(iso: string): string {
   if (days < 7) return `${days}d`;
   const weeks = Math.floor(days / 7);
   return `${weeks}w`;
+}
+
+interface IngestJob {
+  id: string;
+  source: "github" | "notion";
+  source_url: string;
+  status: "queued" | "processing" | "embedding" | "failed";
+  progress: number;
+  documents_indexed: number;
+  total_documents: number | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+function repoNameFromUrl(url: string): string {
+  return url
+    .replace(/^https?:\/\/github\.com\//, "")
+    .replace(/\.git$/, "")
+    .replace(/\/+$/, "");
+}
+
+function jobToSourceStatus(j: IngestJob): SourceStatus {
+  return j.status === "failed" ? "error" : "indexing";
+}
+
+function mergeJobsIntoGroups(
+  grouped: { repos: RepoGroup[]; notionSources: NotionGroup[] },
+  jobs: IngestJob[],
+): { repos: RepoGroup[]; notionSources: NotionGroup[] } {
+  const repoNames = new Set(grouped.repos.map((r) => r.name));
+  const extraRepos: RepoGroup[] = [];
+  let notionInFlight: IngestJob | null = null;
+
+  for (const j of jobs) {
+    if (j.source === "github") {
+      const name = repoNameFromUrl(j.source_url);
+      if (!name || repoNames.has(name)) continue;
+      repoNames.add(name);
+      extraRepos.push({
+        name,
+        source: "github",
+        branch: "main",
+        status: jobToSourceStatus(j),
+        files: 0,
+        chunks: 0,
+        lastIndexed: "—",
+        progress: j.status === "failed" ? undefined : Math.max(j.progress, 0.02),
+        error: j.status === "failed" ? j.error_message ?? undefined : undefined,
+      });
+    } else if (j.source === "notion") {
+      if (!notionInFlight || j.updated_at > notionInFlight.updated_at) {
+        notionInFlight = j;
+      }
+    }
+  }
+
+  let extraNotion: NotionGroup[] = [];
+  if (notionInFlight && grouped.notionSources.length === 0) {
+    extraNotion = [
+      {
+        name: "Notion workspace",
+        source: "notion",
+        workspace: "default",
+        status: jobToSourceStatus(notionInFlight),
+        pages: 0,
+        chunks: 0,
+        lastIndexed: "—",
+        error:
+          notionInFlight.status === "failed"
+            ? notionInFlight.error_message ?? undefined
+            : undefined,
+      },
+    ];
+  }
+
+  return {
+    repos: [...grouped.repos, ...extraRepos],
+    notionSources: [...grouped.notionSources, ...extraNotion],
+  };
 }
 
 function groupDocuments(documents: IndexedDocument[]): {
@@ -142,6 +224,7 @@ function groupDocuments(documents: IndexedDocument[]): {
 // -------------------------------------------------------------------
 
 let documentsPromise: Promise<{ documents: IndexedDocument[] }> | null = null;
+let jobsPromise: Promise<IngestJob[]> | null = null;
 
 function fetchDocumentsPromise(): Promise<{ documents: IndexedDocument[] }> {
   if (!documentsPromise) {
@@ -152,8 +235,19 @@ function fetchDocumentsPromise(): Promise<{ documents: IndexedDocument[] }> {
   return documentsPromise;
 }
 
+function fetchJobsPromise(): Promise<IngestJob[]> {
+  if (!jobsPromise) {
+    jobsPromise = apiFetch<IngestJob[]>("/api/ingest/jobs").catch(() => []);
+  }
+  return jobsPromise;
+}
+
 function invalidateDocuments() {
   documentsPromise = null;
+}
+
+function invalidateJobs() {
+  jobsPromise = null;
 }
 
 // -------------------------------------------------------------------
@@ -349,7 +443,9 @@ function GitHubRow({
             </span>
           </div>
         ) : (
-          <V3StIcon st={repo.status} />
+          <span title={repo.error || undefined}>
+            <V3StIcon st={repo.status} />
+          </span>
         )}
       </td>
       <td
@@ -439,7 +535,9 @@ function NotionRow({
         {item.chunks.toLocaleString()}
       </td>
       <td style={{ padding: "6px 10px" }}>
-        <V3StIcon st={item.status} />
+        <span title={item.error || undefined}>
+          <V3StIcon st={item.status} />
+        </span>
       </td>
       <td
         style={{
@@ -528,8 +626,26 @@ function AddRepoForm({
 // -------------------------------------------------------------------
 
 function ConnectionsContent() {
+  const [refreshKey, setRefreshKey] = useState(0);
   const data = use(fetchDocumentsPromise());
-  const grouped = groupDocuments(data.documents);
+  const jobs = use(fetchJobsPromise());
+  const baseGrouped = groupDocuments(data.documents);
+  const merged = mergeJobsIntoGroups(baseGrouped, jobs);
+
+  // Refetch on window focus so users see in-flight rows + status flips
+  // when they return to the tab. The Suspense boundary re-reads via the
+  // refreshKey bump.
+  useEffect(() => {
+    function onFocus() {
+      invalidateDocuments();
+      invalidateJobs();
+      invalidateJobs();
+      setRefreshKey((k) => k + 1);
+    }
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
+  void refreshKey;
 
   const [extraRepos, setExtraRepos] = useState<RepoGroup[]>([]);
   const [showAddGitHub, setShowAddGitHub] = useState(false);
@@ -566,8 +682,8 @@ function ConnectionsContent() {
       });
   }, []);
 
-  const repos = [...grouped.repos, ...extraRepos];
-  const notionSources = grouped.notionSources.map((n) => ({
+  const repos = [...merged.repos, ...extraRepos];
+  const notionSources = merged.notionSources.map((n) => ({
     ...n,
     name: notionWorkspaceName,
   }));
@@ -604,6 +720,7 @@ function ConnectionsContent() {
       ]);
       setShowAddGitHub(false);
       invalidateDocuments();
+      invalidateJobs();
     },
     [],
   );
@@ -647,6 +764,7 @@ function ConnectionsContent() {
       .then((data) => {
         registerJob(data.job_id, "notion workspace", "ntn");
         invalidateDocuments();
+      invalidateJobs();
         setShowAddNotion(false);
         showFeedback(data.job_id, "notion workspace");
       })

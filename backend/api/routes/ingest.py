@@ -4,8 +4,9 @@ Dispatches Celery tasks and tracks job status via IngestJob model.
 """
 
 import uuid
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +35,19 @@ class IngestStatusResponse(BaseModel):
     documents_indexed: int = 0
     total_documents: int | None = None
     error: str | None = None
+
+
+class JobSummary(BaseModel):
+    id: str
+    source: str
+    source_url: str
+    status: str
+    progress: float
+    documents_indexed: int
+    total_documents: int | None
+    error_message: str | None
+    created_at: datetime
+    updated_at: datetime
 
 
 @router.post("/github", response_model=IngestStatusResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -116,6 +130,50 @@ async def ingest_notion(
     )
 
     return IngestStatusResponse(job_id=str(job_id), status="queued")
+
+
+@router.get("/jobs", response_model=list[JobSummary])
+async def list_jobs(
+    user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    source: str | None = Query(None, description="Filter by source: github | notion"),
+) -> list[JobSummary]:
+    """List the caller's in-flight + recently failed ingest jobs.
+
+    Completed jobs are omitted — they are represented by indexed documents,
+    surfaced via /api/documents. The connections page merges these two
+    sources to show in-progress and errored repos alongside completed ones.
+    """
+    stmt = (
+        select(IngestJob)
+        .where(
+            IngestJob.user_id == uuid.UUID(user.id),
+            IngestJob.status != "complete",
+        )
+        .order_by(IngestJob.updated_at.desc())
+        .limit(50)
+    )
+    if source is not None:
+        stmt = stmt.where(IngestJob.source == source)
+
+    result = await session.execute(stmt)
+    jobs = result.scalars().all()
+
+    return [
+        JobSummary(
+            id=str(j.id),
+            source=j.source,
+            source_url=j.source_url,
+            status=j.status,
+            progress=j.progress,
+            documents_indexed=j.documents_indexed,
+            total_documents=j.total_documents,
+            error_message=j.error_message,
+            created_at=j.created_at,
+            updated_at=j.updated_at,
+        )
+        for j in jobs
+    ]
 
 
 @router.get("/status/{job_id}", response_model=IngestStatusResponse)
