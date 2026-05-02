@@ -219,19 +219,51 @@ export default function SettingsPage() {
             {/* ── Danger ── */}
             <span className="v3-cap">danger zone</span>
             <V3Hr />
-            <div style={{ display: "flex", gap: 12 }}>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               <button
                 className="v3-btn"
                 style={{ borderColor: "var(--err)", color: "var(--err)" }}
-                onClick={() => {
-                  if (window.confirm("Wipe all embeddings? You will need to re-index everything.")) {
-                    // TODO: POST /api/admin/wipe-embeddings
-                    window.alert("Not implemented yet");
+                onClick={async () => {
+                  if (!window.confirm("Wipe library? All indexed documents will be deleted and you will need to re-index everything.")) return;
+                  try {
+                    const res = await apiFetch<{ documents_deleted: number; ingest_jobs_deleted: number }>(
+                      "/api/admin/wipe-library",
+                      { method: "POST" },
+                    );
+                    // The Jobs tab reads from this localStorage cache (jobs/page.tsx:STORAGE_KEY).
+                    // Without clearing it, the UI keeps showing job IDs whose DB rows we just deleted.
+                    localStorage.removeItem("engram_job_ids");
+                    window.alert(`Library wiped: ${res.documents_deleted} documents, ${res.ingest_jobs_deleted} jobs deleted.`);
+                    window.location.reload();
+                  } catch (e) {
+                    window.alert(`Wipe failed: ${(e as Error).message}`);
                   }
                 }}
               >
-                wipe embeddings
+                wipe library
               </button>
+              {process.env.NEXT_PUBLIC_DEBUG === "1" && (
+                <button
+                  className="v3-btn"
+                  style={{ borderColor: "var(--err)", color: "var(--err)" }}
+                  title="Developer-only: drops the Notion connection so re-OAuth can be tested."
+                  onClick={async () => {
+                    if (!window.confirm("[debug] Disconnect Notion? You will need to re-authorize.")) return;
+                    try {
+                      const res = await apiFetch<{ provider: string; deleted: boolean }>(
+                        "/api/admin/disconnect/notion",
+                        { method: "POST" },
+                      );
+                      window.alert(res.deleted ? "Notion disconnected." : "No Notion connection found.");
+                      window.location.reload();
+                    } catch (e) {
+                      window.alert(`Disconnect failed: ${(e as Error).message}`);
+                    }
+                  }}
+                >
+                  [debug] disconnect notion
+                </button>
+              )}
               <button
                 className="v3-btn"
                 style={{ borderColor: "var(--err)", color: "var(--err)" }}

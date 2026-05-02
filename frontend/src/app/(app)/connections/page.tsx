@@ -789,7 +789,7 @@ function ConnectionsContent() {
                       fontSize: 11,
                     }}
                   >
-                    no repositories connected yet
+                    connected — no repositories indexed yet
                   </td>
                 </tr>
               ) : (
@@ -834,7 +834,11 @@ function ConnectionsContent() {
                       fontSize: 11,
                     }}
                   >
-                    no workspaces connected yet
+                    {notionConnected
+                      ? "connected — no pages indexed yet"
+                      : notionConnected === false
+                      ? "not connected — click 'connect notion' below"
+                      : "checking connection…"}
                   </td>
                 </tr>
               ) : (

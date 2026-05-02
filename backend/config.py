@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     sentry_dsn: str = ""
 
+    # Debug-only endpoints (e.g. provider disconnect for re-OAuth testing)
+    engram_debug_endpoints: bool = False
+
     model_config = {
         "env_file": ["../.env", ".env"],  # check repo root first, then backend/
         "env_file_encoding": "utf-8",

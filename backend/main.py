@@ -13,7 +13,7 @@ from sentry_setup import init_sentry
 setup_logging(level=settings.log_level)
 init_sentry(settings.sentry_dsn, settings.app_env)
 
-from api.routes import auth, chat, documents, ingest, knowledge, outputs, providers  # noqa: E402
+from api.routes import admin, auth, chat, documents, ingest, knowledge, outputs, providers  # noqa: E402
 from api.request_id_middleware import request_id_middleware  # noqa: E402
 from api.usage_middleware import usage_tracking_middleware  # noqa: E402
 
@@ -47,6 +47,7 @@ app.add_middleware(
 app.middleware("http")(usage_tracking_middleware)
 app.middleware("http")(request_id_middleware)
 
+app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(documents.router, prefix="/api/documents", tags=["documents"])
