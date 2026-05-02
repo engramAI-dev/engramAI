@@ -27,6 +27,14 @@ interface UsageData {
   output_tokens: number;
 }
 
+interface McpToken {
+  id: string;
+  name: string;
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
 interface ModelOption {
   id: string;
   name: string;
@@ -66,6 +74,9 @@ export default function SettingsPage() {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [usage, setUsage] = useState<UsageData | null>(null);
   const [models, setModels] = useState<ModelOption[]>(MODELS);
+  const [mcpTokens, setMcpTokens] = useState<McpToken[] | null>(null);
+  const [newTokenName, setNewTokenName] = useState("");
+  const [revealedToken, setRevealedToken] = useState<{ id: string; token: string; name: string } | null>(null);
   const currentTheme = useLs("engram_theme", "dark");
   const currentAccent = useLs("engram_accent", "phosphor");
 
@@ -78,6 +89,12 @@ export default function SettingsPage() {
     window.dispatchEvent(new StorageEvent("storage", { key: "engram_accent" }));
   }, []);
 
+  const reloadTokens = useCallback(() => {
+    apiFetch<{ tokens: McpToken[] }>("/api/auth/mcp-tokens")
+      .then((data) => setMcpTokens(data.tokens))
+      .catch(() => setMcpTokens([]));
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     apiFetch<UserInfo>("/api/auth/me")
@@ -86,8 +103,37 @@ export default function SettingsPage() {
     apiFetch<UsageData>("/api/chat/usage")
       .then((data) => { if (!cancelled) setUsage(data); })
       .catch(() => {});
+    reloadTokens();
     return () => { cancelled = true; };
-  }, []);
+  }, [reloadTokens]);
+
+  async function createToken() {
+    const name = newTokenName.trim() || "Unnamed token";
+    try {
+      const res = await apiFetch<{ id: string; name: string; token: string }>(
+        "/api/auth/mcp-tokens",
+        {
+          method: "POST",
+          body: JSON.stringify({ name }),
+        },
+      );
+      setRevealedToken({ id: res.id, token: res.token, name: res.name });
+      setNewTokenName("");
+      reloadTokens();
+    } catch (e) {
+      window.alert(`Token mint failed: ${(e as Error).message}`);
+    }
+  }
+
+  async function revokeToken(id: string, name: string) {
+    if (!window.confirm(`Revoke "${name}"? Any client using this token will stop working immediately.`)) return;
+    try {
+      await apiFetch<void>(`/api/auth/mcp-tokens/${id}`, { method: "DELETE" });
+      reloadTokens();
+    } catch (e) {
+      window.alert(`Revoke failed: ${(e as Error).message}`);
+    }
+  }
 
   function selectModel(id: string) {
     setModels((prev) =>
@@ -214,6 +260,94 @@ export default function SettingsPage() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* ── MCP tokens ── */}
+            <span className="v3-cap">mcp tokens</span>
+            <V3Hr />
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ fontSize: 11, color: "var(--ink-3)", marginBottom: 12 }}>
+                Long-lived tokens for connecting Claude Desktop, Cursor, or claude.ai to this Engram instance over MCP.
+                Paste the token into the host&rsquo;s MCP config. Tokens last 90 days and can be revoked at any time.
+              </div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
+                <input
+                  className="v3-input"
+                  type="text"
+                  placeholder="token name (e.g. my-laptop)"
+                  value={newTokenName}
+                  onChange={(e) => setNewTokenName(e.target.value)}
+                  style={{ flex: 1, fontSize: 12, padding: "6px 8px", background: "transparent", color: "var(--ink)", border: "1px solid var(--line)" }}
+                  maxLength={200}
+                />
+                <button className="v3-btn" data-size="sm" onClick={createToken}>mint</button>
+              </div>
+              {revealedToken && (
+                <div style={{ border: "1px solid var(--accent)", padding: 12, marginBottom: 12, fontSize: 11 }}>
+                  <div style={{ color: "var(--accent)", marginBottom: 6 }}>
+                    [!] Copy now — this token will never be shown again.
+                  </div>
+                  <div style={{ wordBreak: "break-all", fontFamily: "var(--mono, monospace)", fontSize: 10, color: "var(--ink)", marginBottom: 8, padding: 6, background: "var(--bg-2, transparent)", border: "1px dashed var(--line)" }}>
+                    {revealedToken.token}
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      className="v3-btn"
+                      data-size="sm"
+                      onClick={() => navigator.clipboard.writeText(revealedToken.token)}
+                    >
+                      copy
+                    </button>
+                    <button
+                      className="v3-btn"
+                      data-size="sm"
+                      onClick={() => setRevealedToken(null)}
+                    >
+                      dismiss
+                    </button>
+                  </div>
+                </div>
+              )}
+              {mcpTokens === null ? (
+                <div style={{ color: "var(--ink-4)", fontSize: 11 }}>loading...</div>
+              ) : mcpTokens.length === 0 ? (
+                <div style={{ color: "var(--ink-4)", fontSize: 11 }}>no tokens yet.</div>
+              ) : (
+                <div>
+                  {mcpTokens.map((t) => (
+                    <div
+                      key={t.id}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr auto auto",
+                        gap: 10,
+                        alignItems: "center",
+                        padding: "6px 0",
+                        borderBottom: "1px dashed var(--line)",
+                        fontSize: 11,
+                        opacity: t.revoked_at ? 0.5 : 1,
+                      }}
+                    >
+                      <span style={{ color: "var(--ink)" }}>{t.name}</span>
+                      <span style={{ color: "var(--ink-4)", fontSize: 10 }}>
+                        {t.last_used_at ? `used ${t.last_used_at.slice(0, 10)}` : "unused"}
+                      </span>
+                      {t.revoked_at ? (
+                        <V3Tag tone="err">revoked</V3Tag>
+                      ) : (
+                        <button
+                          className="v3-btn"
+                          data-size="sm"
+                          style={{ borderColor: "var(--err)", color: "var(--err)" }}
+                          onClick={() => revokeToken(t.id, t.name)}
+                        >
+                          revoke
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* ── Danger ── */}

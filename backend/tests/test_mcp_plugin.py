@@ -9,12 +9,13 @@ from typing import Any
 
 import pytest
 
-from mcp_plugin.formatting import (
+from mcp_shared.formatting import (
     format_citations,
     format_document,
     format_search_results,
 )
-from mcp_plugin.server import TOOLS, _dispatch
+from mcp_shared.server import _dispatch
+from mcp_shared.tools import TOOLS
 
 
 class _StubClient:

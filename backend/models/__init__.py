@@ -5,6 +5,7 @@ from models.conversation import Conversation
 from models.document import Document
 from models.embedding import Embedding
 from models.ingest_job import IngestJob
+from models.mcp_token import McpToken
 from models.message import Message
 from models.output import Output
 from models.user import User
@@ -16,6 +17,7 @@ __all__ = [
     "Document",
     "Embedding",
     "IngestJob",
+    "McpToken",
     "Message",
     "Output",
     "User",

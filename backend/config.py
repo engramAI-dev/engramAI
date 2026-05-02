@@ -1,4 +1,7 @@
-from pydantic_settings import BaseSettings
+from typing import Annotated
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode
 
 
 class Settings(BaseSettings):
@@ -39,8 +42,24 @@ class Settings(BaseSettings):
     embedding_model: str = "nomic-ai/nomic-embed-text-v1.5"
     embedding_dimension: int = 768
 
-    # CORS
-    cors_origins: list[str] = ["http://localhost:3000"]
+    # CORS — accepts a comma-separated string from env (e.g. for backend host)
+    # OR a JSON list. NoDecode skips pydantic-settings' default JSON
+    # auto-decode so the raw env string reaches the validator below.
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _split_cors_origins(cls, v: object) -> object:
+        if isinstance(v, str):
+            stripped = v.strip()
+            if stripped.startswith("["):
+                import json
+
+                return json.loads(stripped)
+            if stripped == "":
+                return []
+            return [s.strip() for s in stripped.split(",") if s.strip()]
+        return v
 
     # Logging / observability
     log_level: str = "INFO"

@@ -159,6 +159,110 @@ async def callback(
     )
 
 
+@router.post("/mcp-tokens", status_code=status.HTTP_201_CREATED)
+async def create_mcp_token(
+    body: dict,
+    user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Mint a 90d MCP-scoped JWT.
+
+    The token is returned **once**; only its sha256 is persisted. Frontend
+    must show it with a "copy now, you won't see it again" warning.
+    """
+    from api.mcp_auth import mint_mcp_token
+    from models.mcp_token import McpToken
+
+    name = (body or {}).get("name") or "Unnamed token"
+    if not isinstance(name, str) or len(name) > 200:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="name must be a string up to 200 chars",
+        )
+
+    token_id = uuid.uuid4()
+    token, token_hash = mint_mcp_token(
+        user_id=user.id,
+        github_username=user.github_username,
+        token_id=token_id,
+    )
+    record = McpToken(
+        id=token_id,
+        user_id=uuid.UUID(user.id),
+        name=name,
+        token_hash=token_hash,
+    )
+    session.add(record)
+    await session.commit()
+    await session.refresh(record)
+    return {
+        "id": str(record.id),
+        "name": record.name,
+        "token": token,  # shown once
+        "created_at": record.created_at.isoformat(),
+    }
+
+
+@router.get("/mcp-tokens")
+async def list_mcp_tokens(
+    user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from models.mcp_token import McpToken
+
+    result = await session.execute(
+        select(McpToken)
+        .where(McpToken.user_id == uuid.UUID(user.id))
+        .order_by(McpToken.created_at.desc())
+    )
+    rows = result.scalars().all()
+    return {
+        "tokens": [
+            {
+                "id": str(r.id),
+                "name": r.name,
+                "created_at": r.created_at.isoformat(),
+                "last_used_at": (
+                    r.last_used_at.isoformat() if r.last_used_at else None
+                ),
+                "revoked_at": r.revoked_at.isoformat() if r.revoked_at else None,
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.delete("/mcp-tokens/{token_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_mcp_token(
+    token_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    from datetime import datetime, timezone
+
+    from models.mcp_token import McpToken
+
+    try:
+        tid = uuid.UUID(token_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Token not found"
+        )
+    result = await session.execute(
+        select(McpToken).where(
+            McpToken.id == tid, McpToken.user_id == uuid.UUID(user.id)
+        )
+    )
+    record = result.scalar_one_or_none()
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Token not found"
+        )
+    if record.revoked_at is None:
+        record.revoked_at = datetime.now(timezone.utc)
+        await session.commit()
+
+
 @router.get("/me")
 async def me(
     user: CurrentUser = Depends(get_current_user),

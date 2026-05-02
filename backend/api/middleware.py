@@ -38,6 +38,19 @@ async def get_current_user(request: Request) -> CurrentUser:
     if not user_id or not username:
         raise _unauthorized("Invalid token")
 
+    # MCP-scoped tokens (90d) require a DB lookup to honor revocation.
+    # Session JWTs (24h) skip this — their short lifetime is the
+    # revocation surface.
+    if claims.get("scope") == "mcp":
+        # Local import to avoid circulars: middleware loads early.
+        from api.mcp_auth import verify_mcp_token
+        from models.database import async_session
+
+        async with async_session() as session:
+            ok = await verify_mcp_token(token, claims, session)
+        if not ok:
+            raise _unauthorized("Token revoked")
+
     user = CurrentUser(id=user_id, github_username=username)
     request.state.user = user
     return user
