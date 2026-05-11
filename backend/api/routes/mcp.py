@@ -33,6 +33,11 @@ from models.document import Document
 
 router = APIRouter()
 
+# Rate limiting note: not enforced programmatically in v1.5. The auth
+# token IS the rate limit — abuse → revoke from /settings. Move to a
+# Redis-backed slowapi limiter when we add multi-instance deploy or
+# anonymous OAuth-issued tokens (Phase 4 follow-up).
+
 # Per-request user context. Set by the route handler before delegating
 # to the MCP session manager; read by LocalDispatcher in tool calls.
 _current_user_id: ContextVar[str | None] = ContextVar("mcp_current_user_id", default=None)
@@ -151,6 +156,17 @@ async def _handle_mcp_request(request: Request, user: CurrentUser) -> Response:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="MCP transport not initialized",
         )
+
+    # Tag Sentry events from MCP traffic so dashboards can split MCP
+    # errors from the web app without parsing URLs. No-op when Sentry
+    # is not initialized (the SDK swallows tag calls outside a scope).
+    try:
+        import sentry_sdk
+
+        sentry_sdk.set_tag("transport", "mcp")
+        sentry_sdk.set_user({"id": user.id, "username": user.github_username})
+    except Exception:
+        pass
 
     token = _current_user_id.set(user.id)
     try:

@@ -43,9 +43,14 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    # Browser-based MCP hosts (notably claude.ai's custom-connector flow)
+    # need to read the Mcp-Session-Id header off `initialize` responses
+    # to thread subsequent requests onto the same session. Per the MCP
+    # spec it must be in expose_headers.
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Mcp-Session-Id"],
 )
 
 # Order matters — last-registered middleware runs OUTERMOST. We want
