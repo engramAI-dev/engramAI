@@ -51,41 +51,58 @@ async def retrieve(
     Returns SourceChunk objects compatible with ChatEngineResult.sources
     and the /knowledge/search contract.
     """
-    # 1. Embed the query
-    query_embedding = await _embed_query(query)
-    vec_literal = "[" + ",".join(str(v) for v in query_embedding) + "]"
+    logger.info(
+        "retrieval_started",
+        extra={
+            "query_len": len(query),
+            "user_id": user_id,
+            "top_k": top_k,
+            "source_filter": source_filter,
+        },
+    )
 
-    # 2. Build pgvector similarity search query
-    where_clause = "d.user_id = :user_id"
-    params: dict = {"user_id": user_id, "top_k": top_k}
+    try:
+        # 1. Embed the query
+        query_embedding = await _embed_query(query)
+        vec_literal = "[" + ",".join(str(v) for v in query_embedding) + "]"
 
-    if source_filter:
-        where_clause += " AND d.source = :source_filter"
-        params["source_filter"] = source_filter
+        # 2. Build pgvector similarity search query
+        where_clause = "d.user_id = :user_id"
+        params: dict = {"user_id": user_id, "top_k": top_k}
 
-    sql = text(f"""
-        SELECT
-            c.id AS chunk_id,
-            c.document_id,
-            c.content,
-            c.start_line,
-            c.end_line,
-            c.metadata AS chunk_metadata,
-            d.title AS document_title,
-            d.file_path,
-            d.source,
-            d.url,
-            1 - (e.embedding <=> '{vec_literal}'::vector) AS relevance_score
-        FROM embeddings e
-        JOIN chunks c ON c.id = e.chunk_id
-        JOIN documents d ON d.id = c.document_id
-        WHERE {where_clause}
-        ORDER BY e.embedding <=> '{vec_literal}'::vector
-        LIMIT :top_k
-    """)
+        if source_filter:
+            where_clause += " AND d.source = :source_filter"
+            params["source_filter"] = source_filter
 
-    result = await session.execute(sql, params)
-    rows = result.fetchall()
+        sql = text(f"""
+            SELECT
+                c.id AS chunk_id,
+                c.document_id,
+                c.content,
+                c.start_line,
+                c.end_line,
+                c.metadata AS chunk_metadata,
+                d.title AS document_title,
+                d.file_path,
+                d.source,
+                d.url,
+                1 - (e.embedding <=> '{vec_literal}'::vector) AS relevance_score
+            FROM embeddings e
+            JOIN chunks c ON c.id = e.chunk_id
+            JOIN documents d ON d.id = c.document_id
+            WHERE {where_clause}
+            ORDER BY e.embedding <=> '{vec_literal}'::vector
+            LIMIT :top_k
+        """)
+
+        result = await session.execute(sql, params)
+        rows = result.fetchall()
+    except Exception:
+        logger.exception(
+            "retrieval_failed",
+            extra={"user_id": user_id, "query_len": len(query)},
+        )
+        raise
 
     # 3. Map to SourceChunk objects.
     # Line ranges are surfaced via the existing url + content_preview fields
@@ -136,4 +153,14 @@ async def retrieve(
             content_preview=content_preview,
         ))
 
+    top_score = chunks[0].relevance_score if chunks else None
+    logger.info(
+        "retrieval_completed",
+        extra={
+            "user_id": user_id,
+            "chunk_count": len(chunks),
+            "top_score": top_score,
+            "source_filter": source_filter,
+        },
+    )
     return chunks

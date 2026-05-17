@@ -126,6 +126,14 @@ class ChatEngine:
         """
         # 1. Detect intent (D32)
         intent = detect_intent(message)
+        logger.info(
+            "intent_detected",
+            extra={
+                "intent": intent,
+                "user_id": user_id,
+                "query_len": len(message),
+            },
+        )
 
         # 2. Retrieve context (A9)
         sources = await retrieve(
@@ -134,6 +142,18 @@ class ChatEngine:
             session=session,
             top_k=10,
         )
+
+        if not sources:
+            # The user will get "I don't know" or a low-confidence answer.
+            # Logging this lets us correlate empty-context replies post-hoc.
+            logger.warning(
+                "answering_without_context",
+                extra={
+                    "intent": intent,
+                    "user_id": user_id,
+                    "query_len": len(message),
+                },
+            )
 
         # 3. Get or create conversation
         if conversation_id:
