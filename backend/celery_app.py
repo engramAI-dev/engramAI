@@ -30,6 +30,23 @@ celery.conf.update(
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
+    # Silence the Celery 6 deprecation warning and keep startup retries on
+    # if the broker is briefly unreachable during deploy.
+    broker_connection_retry_on_startup=True,
+    # managed Redis free tier caps at 500k commands/day. Default kombu Redis
+    # transport polls BRPOP every ~0.1s (≈864k cmd/day idle), which alone
+    # blows the cap and crashes the worker with ResponseError on the
+    # restore_visible mutex. Slow the poll to 1s; keep visibility timeout
+    # at the kombu default (3600s, plenty for our longest task).
+    # See docs/v1/planning/detailed/2026-04-30-lane-5-deployment.md § 2.5.
+    broker_transport_options={
+        "polling_interval": 1.0,
+        "visibility_timeout": 3600,
+    },
+    # Single worker replica has no peers — the remote-control fanout
+    # channel is pure overhead. Disabling it is belt-and-suspenders with
+    # --without-gossip on the start command.
+    worker_enable_remote_control=False,
 )
 
 # Explicitly import task modules (autodiscover looks for tasks.py by default).
