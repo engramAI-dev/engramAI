@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.middleware import CurrentUser, get_current_user
 from config import settings
 from models.database import get_session
+from models.ingest_job import IngestJob
 from models.user import User
 from models.user_connection import UserConnection
 
@@ -270,7 +271,36 @@ async def notion_callback(
         },
     )
 
-    return RedirectResponse(url=f"{settings.frontend_url}/connections")
+    # Kick off a whole-workspace ingest immediately. The MVP worker
+    # (ingest_notion_workspace in ingestion/notion.py) fetches every page
+    # the token can see and ignores any workspace_id/page_id arg, so
+    # "connection done" and "ingest queued" are effectively the same
+    # event from the user's POV. Doing it here removes the dead
+    # /auth/notion/callback round-trip and the per-page picker in
+    # onboarding (which was sending the wrong field shape anyway).
+    job_id = uuid.uuid4()
+    session.add(
+        IngestJob(
+            id=job_id,
+            user_id=user_id,
+            source="notion",
+            source_url=workspace_id or "default",
+            status="queued",
+        )
+    )
+    await session.commit()
+
+    from ingestion.notion import ingest_notion_workspace
+
+    ingest_notion_workspace.delay(
+        job_id=str(job_id),
+        notion_api_key=access_token,
+        user_id=str(user_id),
+    )
+
+    return RedirectResponse(
+        url=f"{settings.frontend_url}/connections?notion_indexing={job_id}"
+    )
 
 
 # ---------------------------------------------------------------------------
