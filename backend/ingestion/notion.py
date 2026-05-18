@@ -340,8 +340,15 @@ def ingest_notion_workspace(
     job_id: str,
     notion_api_key: str,
     user_id: str,
+    workspace_id: str = "default",
 ) -> None:
-    """Fetch Notion pages, chunk content, dispatch embedding."""
+    """Fetch Notion pages for one workspace, chunk content, dispatch embedding.
+
+    workspace_id scopes the atomic-swap delete at the end of the run so
+    documents from other connected Notion workspaces survive a re-ingest
+    of this one. Defaults to "default" for backward compat with any
+    in-flight tasks queued before this signature change.
+    """
     jid = uuid.UUID(job_id)
     uid = uuid.UUID(user_id)
 
@@ -380,14 +387,18 @@ def ingest_notion_workspace(
                 if not text.strip():
                     continue
 
-                # Create Document
+                # Create Document — tag with workspace_id so delete-old-docs
+                # and per-workspace filters can scope correctly.
                 doc = Document(
                     id=uuid.uuid4(),
                     user_id=uid,
                     title=title,
                     source="notion",
                     url=url,
-                    metadata_={"notion_page_id": page_id},
+                    metadata_={
+                        "notion_page_id": page_id,
+                        "notion_workspace_id": workspace_id,
+                    },
                 )
                 session.add(doc)
                 session.flush()
@@ -416,11 +427,14 @@ def ingest_notion_workspace(
                 if (i + 1) % 5 == 0 or (i + 1) == total_pages:
                     _update_job(session, jid, progress=progress, documents_indexed=i + 1)
 
-            # Delete old Notion docs (swap: old removed, new added in same commit)
+            # Delete old Notion docs FROM THIS WORKSPACE ONLY (swap: old
+            # removed, new added in same commit). Documents from other
+            # workspaces this user has connected stay intact.
             session.execute(
                 delete(Document).where(
                     Document.user_id == uid,
                     Document.source == "notion",
+                    Document.metadata_["notion_workspace_id"].astext == workspace_id,
                     Document.id.notin_(new_doc_ids),
                 )
             )

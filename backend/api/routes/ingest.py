@@ -94,12 +94,14 @@ async def ingest_notion(
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> IngestStatusResponse:
-    """Trigger ingestion of a Notion workspace."""
-    # Look up per-user Notion token from OAuth connection.
+    """Trigger ingestion of a specific Notion workspace."""
+    # Look up the per-workspace Notion token. Multiple workspaces can be
+    # connected per user; the request's workspace_id picks the one.
     result = await session.execute(
         select(UserConnection.access_token).where(
             UserConnection.user_id == uuid.UUID(user.id),
             UserConnection.provider == "notion",
+            UserConnection.workspace_id == request.workspace_id,
         )
     )
     notion_token = result.scalar_one_or_none()
@@ -107,7 +109,10 @@ async def ingest_notion(
     if not notion_token:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Notion not connected — connect via OAuth in onboarding or connections page",
+            detail=(
+                f"Notion workspace '{request.workspace_id}' not connected — "
+                "connect via OAuth in onboarding or connections page"
+            ),
         )
 
     job_id = uuid.uuid4()
@@ -121,12 +126,14 @@ async def ingest_notion(
     session.add(job)
     await session.commit()
 
-    # Dispatch Celery task with the per-user token
+    # Dispatch Celery task — worker scopes delete-old-docs by workspace_id
+    # so other workspaces' pages survive.
     from ingestion.notion import ingest_notion_workspace
     ingest_notion_workspace.delay(
         job_id=str(job_id),
         notion_api_key=notion_token,
         user_id=user.id,
+        workspace_id=request.workspace_id,
     )
 
     return IngestStatusResponse(job_id=str(job_id), status="queued")

@@ -26,12 +26,21 @@ import { GitHub, Notion } from "@/components/engram/icons";
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
+interface NotionWorkspaceInfo {
+  workspace_id: string;
+  workspace_name: string;
+}
+
 interface Provider {
   id: string;
   name: string;
   auth_type: "oauth" | "token" | "none";
   connected: boolean;
   metadata: Record<string, unknown>;
+  // Populated only for providers that support multiple per-user
+  // connections (Notion). Onboarding uses the first one as the
+  // "current" workspace since the flow targets first-time setup.
+  workspaces?: NotionWorkspaceInfo[] | null;
 }
 
 interface GitHubResource {
@@ -340,9 +349,15 @@ export default function OnboardingPage() {
         setProviders(list);
         setLoadingProviders(false);
 
-        // For each connected provider, fetch resources
+        // For each connected provider, fetch resources. Notion now requires
+        // a workspace_id query param; use the first connected workspace
+        // since onboarding targets the first-time-setup case.
         for (const p of list) {
-          if (p.connected) {
+          if (!p.connected) continue;
+          if (p.id === "notion") {
+            const wsId = p.workspaces?.[0]?.workspace_id;
+            if (wsId) fetchResources(p.id, wsId);
+          } else {
             fetchResources(p.id);
           }
         }
@@ -355,10 +370,13 @@ export default function OnboardingPage() {
   }, []);
 
   /* ---- Fetch resources for a provider ---- */
-  const fetchResources = useCallback((providerId: string) => {
+  const fetchResources = useCallback((providerId: string, workspaceId?: string) => {
     setLoadingResources((prev) => ({ ...prev, [providerId]: true }));
 
-    apiFetch<Resource[]>(`/api/providers/${providerId}/resources`)
+    const qs = workspaceId
+      ? `?workspace_id=${encodeURIComponent(workspaceId)}`
+      : "";
+    apiFetch<Resource[]>(`/api/providers/${providerId}/resources${qs}`)
       .then((data) => {
         const list = Array.isArray(data) ? data : [];
         setResources((prev) => ({ ...prev, [providerId]: list }));
@@ -452,14 +470,23 @@ export default function OnboardingPage() {
           );
         }
       } else if (provider.id === "notion") {
-        for (const r of selectedResources) {
-          const title = "title" in r ? r.title : r.id;
+        // Worker ingests the whole workspace regardless of selection — the
+        // per-page UI is honored as a "yes please ingest" gate but we
+        // collapse to one workspace-level call. The prior per-page loop
+        // sent { page_id } which the backend silently 422'd against its
+        // workspace_id-only schema.
+        const wsId = provider.workspaces?.[0]?.workspace_id;
+        if (selectedResources.length > 0 && wsId) {
+          const summary =
+            selectedResources.length === 1 && "title" in selectedResources[0]
+              ? selectedResources[0].title
+              : `${selectedResources.length} pages`;
           jobs.push(
             apiFetch<{ job_id: string; status: string }>("/api/ingest/notion", {
               method: "POST",
-              body: JSON.stringify({ page_id: r.id }),
+              body: JSON.stringify({ workspace_id: wsId }),
             }).then((data) => {
-              registerJob(data.job_id, title, "ntn");
+              registerJob(data.job_id, summary, "ntn");
               return data;
             }),
           );

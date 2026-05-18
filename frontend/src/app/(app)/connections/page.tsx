@@ -31,6 +31,14 @@ interface IndexedDocument {
   url: string;
   chunk_count: number;
   indexed_at: string | null;
+  // Set for notion docs (from metadata->>'notion_workspace_id'). Null for
+  // github and for any pre-multi-workspace notion docs.
+  workspace_id: string | null;
+}
+
+interface NotionWorkspaceConn {
+  workspace_id: string;
+  workspace_name: string;
 }
 
 interface RepoGroup {
@@ -49,6 +57,7 @@ interface NotionGroup {
   name: string;
   source: "notion";
   workspace: string;
+  workspaceId: string;
   status: SourceStatus;
   pages: number;
   chunks: number;
@@ -115,7 +124,7 @@ function mergeJobsIntoGroups(
 ): { repos: RepoGroup[]; notionSources: NotionGroup[] } {
   const repoNames = new Set(grouped.repos.map((r) => r.name));
   const extraRepos: RepoGroup[] = [];
-  let notionInFlight: IngestJob | null = null;
+  const notionInFlightByWs = new Map<string, IngestJob>();
 
   for (const j of jobs) {
     if (j.source === "github") {
@@ -134,29 +143,38 @@ function mergeJobsIntoGroups(
         error: j.status === "failed" ? j.error_message ?? undefined : undefined,
       });
     } else if (j.source === "notion") {
-      if (!notionInFlight || j.updated_at > notionInFlight.updated_at) {
-        notionInFlight = j;
+      // Track latest in-flight job per workspace_id (source_url holds it).
+      const wsId = j.source_url || "default";
+      const prev = notionInFlightByWs.get(wsId);
+      if (!prev || j.updated_at > prev.updated_at) {
+        notionInFlightByWs.set(wsId, j);
       }
     }
   }
 
-  let extraNotion: NotionGroup[] = [];
-  if (notionInFlight && grouped.notionSources.length === 0) {
-    extraNotion = [
-      {
-        name: "Notion workspace",
-        source: "notion",
-        workspace: "default",
-        status: jobToSourceStatus(notionInFlight),
-        pages: 0,
-        chunks: 0,
-        lastIndexed: "—",
-        error:
-          notionInFlight.status === "failed"
-            ? notionInFlight.error_message ?? undefined
-            : undefined,
-      },
-    ];
+  // Surface in-flight Notion jobs whose workspace isn't already in the
+  // grouped rows (e.g. first ingest of a freshly-connected workspace
+  // hasn't produced documents yet).
+  const existingWorkspaceIds = new Set(
+    grouped.notionSources.map((n) => n.workspaceId),
+  );
+  const extraNotion: NotionGroup[] = [];
+  for (const [wsId, job] of notionInFlightByWs.entries()) {
+    if (existingWorkspaceIds.has(wsId)) continue;
+    extraNotion.push({
+      name: "Notion workspace",
+      source: "notion",
+      workspace: wsId,
+      workspaceId: wsId,
+      status: jobToSourceStatus(job),
+      pages: 0,
+      chunks: 0,
+      lastIndexed: "—",
+      error:
+        job.status === "failed"
+          ? job.error_message ?? undefined
+          : undefined,
+    });
   }
 
   return {
@@ -192,16 +210,20 @@ function groupDocuments(documents: IndexedDocument[]): {
         });
       }
     } else if (doc.source === "notion") {
-      const workspace = doc.repo || "default";
-      const existing = notionMap.get(workspace);
+      // Group by workspace_id from doc metadata. Legacy notion docs without
+      // a workspace_id (created before migration 0005) collapse to "default"
+      // so they still appear under a single row instead of vanishing.
+      const workspaceId = doc.workspace_id || "default";
+      const existing = notionMap.get(workspaceId);
       if (existing) {
         existing.pages += 1;
         existing.chunks += doc.chunk_count;
       } else {
-        notionMap.set(workspace, {
+        notionMap.set(workspaceId, {
           name: "Notion workspace",
           source: "notion",
-          workspace,
+          workspace: workspaceId,
+          workspaceId,
           status: "fresh",
           pages: 1,
           chunks: doc.chunk_count,
@@ -263,6 +285,10 @@ interface ProviderSectionProps {
   children: React.ReactNode;
   addLabel: string;
   onAdd?: () => void;
+  // Re-applies the [CONNECTED] hardcode fix from PR #45's frontend
+  // cleanup that got dropped during the squash merge — bind the tag to
+  // actual state instead of always showing CONNECTED.
+  connected: boolean | null;
 }
 
 function ProviderSection({
@@ -271,6 +297,7 @@ function ProviderSection({
   children,
   addLabel,
   onAdd,
+  connected,
 }: ProviderSectionProps) {
   return (
     <section style={{ borderBottom: "1px solid var(--ink)" }}>
@@ -304,7 +331,13 @@ function ProviderSection({
           {sub}
         </span>
         <span style={{ flex: 1 }} />
-        <V3Tag tone="ok">[CONNECTED]</V3Tag>
+        {connected === true ? (
+          <V3Tag tone="ok">[CONNECTED]</V3Tag>
+        ) : connected === false ? (
+          <V3Tag tone="err">[DISCONNECTED]</V3Tag>
+        ) : (
+          <V3Tag tone="acc">[…]</V3Tag>
+        )}
       </div>
       {children}
       <div
@@ -475,10 +508,12 @@ function NotionRow({
   item,
   index,
   onReindex,
+  onDisconnect,
 }: {
   item: NotionGroup;
   index: number;
   onReindex: () => void;
+  onDisconnect: () => void;
 }) {
   return (
     <tr style={{ borderBottom: "1px dashed var(--line, var(--ink-4))" }}>
@@ -549,9 +584,13 @@ function NotionRow({
       >
         {item.lastIndexed}
       </td>
-      <td style={{ padding: "6px 10px", textAlign: "right" }}>
+      <td style={{ padding: "6px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
         <V3Btn size="sm" onClick={onReindex}>
           reindex
+        </V3Btn>
+        <span style={{ display: "inline-block", width: 6 }} />
+        <V3Btn size="sm" onClick={onDisconnect}>
+          disconnect
         </V3Btn>
       </td>
     </tr>
@@ -650,23 +689,33 @@ function ConnectionsContent() {
   const [extraRepos, setExtraRepos] = useState<RepoGroup[]>([]);
   const [showAddGitHub, setShowAddGitHub] = useState(false);
   const [showAddNotion, setShowAddNotion] = useState(false);
-  const [notionConnected, setNotionConnected] = useState<boolean | null>(null);
-  const [notionWorkspaceName, setNotionWorkspaceName] = useState("Notion workspace");
+  // null = "not yet fetched"; [] = "fetched, none connected"; non-empty = list
+  const [notionWorkspaces, setNotionWorkspaces] = useState<NotionWorkspaceConn[] | null>(null);
+  const notionConnected = notionWorkspaces === null ? null : notionWorkspaces.length > 0;
 
-  // Check if Notion is connected via OAuth
-  useEffect(() => {
-    apiFetch<{ id: string; name: string; connected: boolean; metadata: Record<string, string> }[]>("/api/providers")
+  // Fetch connected Notion workspaces from /api/providers. The endpoint
+  // returns one entry per (user, provider, workspace_id) row.
+  const refreshNotionWorkspaces = useCallback(() => {
+    apiFetch<{
+      id: string;
+      name: string;
+      connected: boolean;
+      workspaces?: NotionWorkspaceConn[] | null;
+    }[]>("/api/providers")
       .then((providers) => {
         const notion = providers.find((p) => p.id === "notion");
-        setNotionConnected(notion?.connected ?? false);
-        if (notion?.metadata?.workspace_name) {
-          setNotionWorkspaceName(notion.metadata.workspace_name);
-        }
+        setNotionWorkspaces(notion?.workspaces ?? []);
       })
-      .catch(() => setNotionConnected(false));
+      .catch(() => setNotionWorkspaces([]));
   }, []);
 
+  useEffect(() => {
+    refreshNotionWorkspaces();
+  }, [refreshNotionWorkspaces]);
+
   const handleConnectNotion = useCallback(() => {
+    // Multi-workspace is supported — connecting adds a new row keyed on
+    // (user, provider, workspace_id); existing workspaces stay intact.
     apiFetch<{ redirect_url?: string; connected?: boolean }>("/api/providers/notion/connect", {
       method: "POST",
     })
@@ -674,19 +723,69 @@ function ConnectionsContent() {
         if (data.redirect_url) {
           window.location.href = data.redirect_url;
         } else if (data.connected) {
-          setNotionConnected(true);
+          refreshNotionWorkspaces();
         }
       })
       .catch((err) => {
         window.alert("Failed: " + (err instanceof Error ? err.message : "Notion OAuth not configured"));
       });
-  }, []);
+  }, [refreshNotionWorkspaces]);
+
+  const handleDisconnectWorkspace = useCallback(
+    (workspaceId: string, workspaceName: string) => {
+      const ok = window.confirm(
+        `Disconnect "${workspaceName}"?\n\n` +
+          "This removes the OAuth token. Indexed pages from this workspace " +
+          "will be removed on the next ingest of any workspace.",
+      );
+      if (!ok) return;
+      apiFetch(
+        `/api/providers/notion/disconnect?workspace_id=${encodeURIComponent(workspaceId)}`,
+        { method: "POST" },
+      )
+        .then(() => {
+          refreshNotionWorkspaces();
+          invalidateDocuments();
+          invalidateJobs();
+          setRefreshKey((k) => k + 1);
+        })
+        .catch((err) => {
+          window.alert(
+            "Failed to disconnect: " + (err instanceof Error ? err.message : "unknown"),
+          );
+        });
+    },
+    [refreshNotionWorkspaces],
+  );
 
   const repos = [...merged.repos, ...extraRepos];
-  const notionSources = merged.notionSources.map((n) => ({
-    ...n,
-    name: notionWorkspaceName,
-  }));
+  // Augment rows: for each connected workspace not yet represented by docs
+  // or in-flight jobs, surface a placeholder row so the workspace is
+  // visible immediately after connect (before ingest finishes).
+  const workspacesInRows = new Set(merged.notionSources.map((n) => n.workspaceId));
+  const placeholderNotionRows: NotionGroup[] = (notionWorkspaces ?? [])
+    .filter((w) => !workspacesInRows.has(w.workspace_id))
+    .map((w) => ({
+      name: w.workspace_name || "Notion workspace",
+      source: "notion" as const,
+      workspace: w.workspace_id,
+      workspaceId: w.workspace_id,
+      status: "fresh" as const,
+      pages: 0,
+      chunks: 0,
+      lastIndexed: "—",
+    }));
+  // Resolve workspace_name for existing rows from the providers list.
+  const wsNameById = new Map(
+    (notionWorkspaces ?? []).map((w) => [w.workspace_id, w.workspace_name]),
+  );
+  const notionSources: NotionGroup[] = [
+    ...merged.notionSources.map((n) => ({
+      ...n,
+      name: wsNameById.get(n.workspaceId) || n.name,
+    })),
+    ...placeholderNotionRows,
+  ];
 
   const totalSources = repos.length + notionSources.length;
   const totalChunks =
@@ -756,22 +855,26 @@ function ConnectionsContent() {
       .catch(() => {});
   }, []);
 
-  const handleIndexNotion = useCallback(() => {
-    apiFetch<{ job_id: string }>("/api/ingest/notion", {
-      method: "POST",
-      body: JSON.stringify({ workspace_id: "default" }),
-    })
-      .then((data) => {
-        registerJob(data.job_id, "notion workspace", "ntn");
-        invalidateDocuments();
-      invalidateJobs();
-        setShowAddNotion(false);
-        showFeedback(data.job_id, "notion workspace");
+  const handleIndexNotion = useCallback(
+    (workspaceId: string, workspaceName: string) => {
+      apiFetch<{ job_id: string }>("/api/ingest/notion", {
+        method: "POST",
+        body: JSON.stringify({ workspace_id: workspaceId }),
       })
-      .catch((err) => {
-        window.alert(`Failed: ${err instanceof Error ? err.message : "Notion not connected"}`);
-      });
-  }, [showFeedback]);
+        .then((data) => {
+          const label = workspaceName || "notion workspace";
+          registerJob(data.job_id, label, "ntn");
+          invalidateDocuments();
+          invalidateJobs();
+          setShowAddNotion(false);
+          showFeedback(data.job_id, label);
+        })
+        .catch((err) => {
+          window.alert(`Failed: ${err instanceof Error ? err.message : "Notion not connected"}`);
+        });
+    },
+    [showFeedback],
+  );
 
   return (
     <>
@@ -784,13 +887,15 @@ function ConnectionsContent() {
               for (const repo of repos) {
                 handleReindex(repo.name);
               }
-              // Re-index Notion
-              if (notionSources.length > 0) {
+              // Re-index every connected Notion workspace (one job per).
+              for (const w of notionWorkspaces ?? []) {
                 apiFetch<{ job_id: string }>("/api/ingest/notion", {
                   method: "POST",
-                  body: JSON.stringify({ workspace_id: "default" }),
+                  body: JSON.stringify({ workspace_id: w.workspace_id }),
                 })
-                  .then((data) => { registerJob(data.job_id, "notion workspace", "ntn"); })
+                  .then((data) => {
+                    registerJob(data.job_id, w.workspace_name || "notion workspace", "ntn");
+                  })
                   .catch(() => {});
               }
             }}
@@ -883,6 +988,7 @@ function ConnectionsContent() {
           columnLabel="docs"
           addLabel="add repository"
           onAdd={() => setShowAddGitHub(true)}
+          connected={true}
         >
           <table
             style={{
@@ -923,11 +1029,18 @@ function ConnectionsContent() {
         <ProviderSection
           id="no"
           title="notion.providers"
-          sub={notionConnected ? "// connected" : "// not connected"}
+          sub={
+            notionConnected === true
+              ? `// ${(notionWorkspaces?.length ?? 0)} workspace(s) connected`
+              : notionConnected === false
+              ? "// not connected"
+              : "// checking…"
+          }
           columnKey="page"
           columnLabel="pages"
           addLabel={notionConnected ? "connect another workspace" : "connect notion"}
           onAdd={handleConnectNotion}
+          connected={notionConnected}
         >
           <table
             style={{
@@ -961,7 +1074,13 @@ function ConnectionsContent() {
                 </tr>
               ) : (
                 notionSources.map((n, i) => (
-                  <NotionRow key={n.workspace} item={n} index={i} onReindex={handleIndexNotion} />
+                  <NotionRow
+                    key={n.workspaceId}
+                    item={n}
+                    index={i}
+                    onReindex={() => handleIndexNotion(n.workspaceId, n.name)}
+                    onDisconnect={() => handleDisconnectWorkspace(n.workspaceId, n.name)}
+                  />
                 ))
               )}
             </tbody>

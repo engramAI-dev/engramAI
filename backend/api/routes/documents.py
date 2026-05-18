@@ -34,7 +34,9 @@ async def list_documents(
     )
     total = count_result.scalar_one()
 
-    # Documents with chunk counts
+    # Documents with chunk counts. metadata_ included so the frontend can
+    # group Notion docs by workspace (notion_workspace_id lives there per
+    # ingestion/notion.py).
     stmt = (
         select(
             Document.id,
@@ -45,6 +47,7 @@ async def list_documents(
             Document.url,
             Document.language,
             Document.indexed_at,
+            Document.metadata_,
             func.count(Chunk.id).label("chunk_count"),
         )
         .outerjoin(Chunk, Chunk.document_id == Document.id)
@@ -69,6 +72,14 @@ async def list_documents(
                 "language": row.language,
                 "indexed_at": row.indexed_at.isoformat() if row.indexed_at else None,
                 "chunk_count": row.chunk_count,
+                # Surface notion_workspace_id from metadata so the frontend can
+                # render multiple Notion workspaces as separate rows. None for
+                # GitHub docs and for pre-multi-workspace Notion rows.
+                "workspace_id": (
+                    row.metadata_.get("notion_workspace_id")
+                    if row.source == "notion" and isinstance(row.metadata_, dict)
+                    else None
+                ),
             }
             for row in rows
         ],

@@ -13,7 +13,15 @@ from models.database import Base
 class UserConnection(Base):
     __tablename__ = "user_connections"
     __table_args__ = (
-        UniqueConstraint("user_id", "provider", name="uq_user_connections_user_provider"),
+        # workspace_id is part of the key so a user can hold multiple Notion
+        # workspace OAuth tokens at once. For providers where the concept
+        # doesn't apply, the convention is workspace_id = "default".
+        UniqueConstraint(
+            "user_id",
+            "provider",
+            "workspace_id",
+            name="uq_user_connections_user_provider_workspace",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -23,6 +31,7 @@ class UserConnection(Base):
         Uuid(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(255), nullable=False)
     access_token: Mapped[str] = mapped_column(Text, nullable=False)
     metadata_: Mapped[dict] = mapped_column(
         "metadata", JSONB(), nullable=False, server_default="{}"

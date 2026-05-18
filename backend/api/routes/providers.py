@@ -32,12 +32,23 @@ _PROVIDERS = [
 # ---------------------------------------------------------------------------
 # Pydantic schemas
 # ---------------------------------------------------------------------------
+class NotionWorkspaceInfo(BaseModel):
+    workspace_id: str
+    workspace_name: str
+    metadata: dict[str, Any] = {}
+
+
 class ProviderInfo(BaseModel):
     id: str
     name: str
     auth_type: str
     connected: bool
     metadata: dict[str, Any] = {}
+    # Only populated for providers that support multiple per-user
+    # connections (currently just Notion). Each entry corresponds to one
+    # row in user_connections. None means "this provider has at most one
+    # connection per user" (e.g. github via users.access_token).
+    workspaces: list[NotionWorkspaceInfo] | None = None
 
 
 class GitHubRepo(BaseModel):
@@ -74,18 +85,27 @@ async def list_providers(
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[ProviderInfo]:
-    """Return all known providers with per-user connection status."""
+    """Return all known providers with per-user connection status.
+
+    For Notion, populates `workspaces` with one entry per connected
+    workspace so the frontend can render multi-workspace UIs without
+    a second round-trip.
+    """
     result = await session.execute(
         select(UserConnection).where(
             UserConnection.user_id == uuid.UUID(user.id)
         )
     )
-    connections = {c.provider: c for c in result.scalars().all()}
+    # Group by provider so Notion can hold multiple workspaces.
+    by_provider: dict[str, list[UserConnection]] = {}
+    for c in result.scalars().all():
+        by_provider.setdefault(c.provider, []).append(c)
 
     out: list[ProviderInfo] = []
     for p in _PROVIDERS:
         if p["id"] == "github":
-            # GitHub is always connected via the users table token.
+            # GitHub is always connected via the users table token; the
+            # connection isn't stored in user_connections at all.
             out.append(
                 ProviderInfo(
                     id=p["id"],
@@ -95,15 +115,35 @@ async def list_providers(
                     metadata={"username": user.github_username},
                 )
             )
-        else:
-            conn = connections.get(p["id"])
+        elif p["id"] == "notion":
+            conns = by_provider.get("notion", [])
+            workspaces = [
+                NotionWorkspaceInfo(
+                    workspace_id=c.workspace_id,
+                    workspace_name=str(c.metadata_.get("workspace_name", "")),
+                    metadata=c.metadata_,
+                )
+                for c in conns
+            ]
             out.append(
                 ProviderInfo(
                     id=p["id"],
                     name=p["name"],
                     auth_type=p["auth_type"],
-                    connected=conn is not None,
-                    metadata=conn.metadata_ if conn else {},
+                    connected=len(workspaces) > 0,
+                    metadata={},
+                    workspaces=workspaces,
+                )
+            )
+        else:
+            conns = by_provider.get(p["id"], [])
+            out.append(
+                ProviderInfo(
+                    id=p["id"],
+                    name=p["name"],
+                    auth_type=p["auth_type"],
+                    connected=len(conns) > 0,
+                    metadata=conns[0].metadata_ if conns else {},
                 )
             )
     return out
@@ -163,15 +203,16 @@ async def list_github_repos(
 # ---------------------------------------------------------------------------
 @router.get("/notion/resources", response_model=list[NotionPage])
 async def list_notion_pages(
+    workspace_id: str,
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[NotionPage]:
-    """List accessible Notion pages for the connected user."""
-    token = await _get_notion_token(user, session)
+    """List accessible Notion pages for a specific connected workspace."""
+    token = await _get_notion_token(user, session, workspace_id)
     if not token:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Notion not connected",
+            detail=f"Notion workspace '{workspace_id}' not connected",
         )
 
     async with httpx.AsyncClient() as client:
@@ -256,7 +297,9 @@ async def notion_callback(
 
     data = resp.json()
     access_token = data["access_token"]
-    workspace_id = data.get("workspace_id", "")
+    # Notion always returns workspace_id for OAuth tokens; fall back to
+    # "default" only if it's missing (defensive, shouldn't happen).
+    workspace_id = data.get("workspace_id") or "default"
     workspace_name = data.get("workspace_name", "")
 
     user_id = uuid.UUID(state)
@@ -264,6 +307,7 @@ async def notion_callback(
         session,
         user_id=user_id,
         provider="notion",
+        workspace_id=workspace_id,
         access_token=access_token,
         metadata_={
             "workspace_id": workspace_id,
@@ -271,20 +315,17 @@ async def notion_callback(
         },
     )
 
-    # Kick off a whole-workspace ingest immediately. The MVP worker
-    # (ingest_notion_workspace in ingestion/notion.py) fetches every page
-    # the token can see and ignores any workspace_id/page_id arg, so
-    # "connection done" and "ingest queued" are effectively the same
-    # event from the user's POV. Doing it here removes the dead
-    # /auth/notion/callback round-trip and the per-page picker in
-    # onboarding (which was sending the wrong field shape anyway).
+    # Kick off this workspace's ingest immediately. The worker scopes
+    # delete-old-docs by workspace_id so other connected workspaces are
+    # untouched. "Connection done" and "ingest queued" are effectively
+    # the same event from the user's POV.
     job_id = uuid.uuid4()
     session.add(
         IngestJob(
             id=job_id,
             user_id=user_id,
             source="notion",
-            source_url=workspace_id or "default",
+            source_url=workspace_id,
             status="queued",
         )
     )
@@ -296,6 +337,7 @@ async def notion_callback(
         job_id=str(job_id),
         notion_api_key=access_token,
         user_id=str(user_id),
+        workspace_id=workspace_id,
     )
 
     return RedirectResponse(
@@ -308,16 +350,26 @@ async def notion_callback(
 # ---------------------------------------------------------------------------
 @router.post("/notion/disconnect", status_code=status.HTTP_204_NO_CONTENT)
 async def disconnect_notion(
+    workspace_id: str | None = None,
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> None:
-    """Remove the user's Notion connection."""
-    await session.execute(
-        delete(UserConnection).where(
-            UserConnection.user_id == uuid.UUID(user.id),
-            UserConnection.provider == "notion",
-        )
+    """Remove a Notion workspace connection.
+
+    If `workspace_id` is provided, removes only that workspace's row.
+    If omitted, removes ALL of the user's Notion connections — kept for
+    convenience in dev/admin flows. Note: this only deletes the OAuth
+    token; indexed Notion documents stay in the library until the next
+    re-ingest cycle (the worker scopes its delete-old-docs by
+    workspace_id).
+    """
+    stmt = delete(UserConnection).where(
+        UserConnection.user_id == uuid.UUID(user.id),
+        UserConnection.provider == "notion",
     )
+    if workspace_id is not None:
+        stmt = stmt.where(UserConnection.workspace_id == workspace_id)
+    await session.execute(stmt)
     await session.commit()
 
 
@@ -339,10 +391,13 @@ async def save_token(
             detail=f"Cannot set token for provider '{provider_id}'",
         )
 
+    # Generic token-auth providers don't have a workspace concept; use
+    # the "default" sentinel to satisfy the NOT NULL workspace_id column.
     await _upsert_connection(
         session,
         user_id=uuid.UUID(user.id),
         provider=provider_id,
+        workspace_id="default",
         access_token=body.token,
         metadata_={},
     )
@@ -355,12 +410,14 @@ async def save_token(
 async def _get_notion_token(
     user: CurrentUser,
     session: AsyncSession,
+    workspace_id: str,
 ) -> str | None:
-    """Return the user's Notion token from user_connections (OAuth)."""
+    """Return the user's Notion token for a specific workspace."""
     result = await session.execute(
         select(UserConnection.access_token).where(
             UserConnection.user_id == uuid.UUID(user.id),
             UserConnection.provider == "notion",
+            UserConnection.workspace_id == workspace_id,
         )
     )
     return result.scalar_one_or_none()
@@ -371,19 +428,30 @@ async def _upsert_connection(
     *,
     user_id: uuid.UUID,
     provider: str,
+    workspace_id: str,
     access_token: str,
     metadata_: dict[str, Any],
 ) -> None:
-    """Insert or update a user_connection row."""
+    """Insert or update a user_connection row keyed by (user, provider, workspace).
+
+    For providers that don't have a workspace concept, callers pass
+    workspace_id="default" — matches the convention enforced by the
+    NOT NULL workspace_id column in migration 0005.
+    """
     stmt = pg_insert(UserConnection).values(
         id=uuid.uuid4(),
         user_id=user_id,
         provider=provider,
+        workspace_id=workspace_id,
         access_token=access_token,
         metadata_=metadata_,
     )
     stmt = stmt.on_conflict_do_update(
-        index_elements=[UserConnection.user_id, UserConnection.provider],
+        index_elements=[
+            UserConnection.user_id,
+            UserConnection.provider,
+            UserConnection.workspace_id,
+        ],
         set_={
             "access_token": stmt.excluded.access_token,
             "metadata": stmt.excluded.metadata,
