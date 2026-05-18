@@ -4,6 +4,8 @@ Importable standalone — does NOT import the FastAPI app (no circular deps).
 Uses Redis broker from settings.
 """
 
+import ssl
+
 from celery import Celery
 
 from config import settings
@@ -48,6 +50,15 @@ celery.conf.update(
     # --without-gossip on the start command.
     worker_enable_remote_control=False,
 )
+
+# Validate the TLS chain when the broker URL uses rediss:// (managed Redis + most
+# managed providers). Without this, kombu warns "Secure redis scheme specified
+# (rediss) with no ssl options, defaulting to insecure SSL behaviour" and
+# skips chain validation. CERT_REQUIRED uses the system trust store; managed Redis
+# uses a public CA so no ssl_ca_certs override needed. Plain redis:// dev
+# URLs skip this entirely so local dev keeps working.
+if settings.redis_url.startswith("rediss://"):
+    celery.conf.broker_use_ssl = {"ssl_cert_reqs": ssl.CERT_REQUIRED}
 
 # Explicitly import task modules (autodiscover looks for tasks.py by default).
 celery.conf.update(
