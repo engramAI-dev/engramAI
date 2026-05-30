@@ -18,6 +18,21 @@ interface ApiJob {
   error: string | null;
 }
 
+// Shape returned by GET /api/ingest/jobs?include_completed=true.
+// Different from ApiJob above (which is GET /api/ingest/status/{id}).
+interface ApiJobListEntry {
+  id: string;
+  source: "github" | "notion";
+  source_url: string;
+  status: string;
+  progress: number;
+  documents_indexed: number;
+  total_documents: number | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 interface Job {
   id: string;
   title: string;
@@ -117,12 +132,57 @@ function JobsPageInner() {
 
   const fetchJobs = useCallback(async () => {
     const stored = loadJobIds();
-    if (stored.length === 0) return;
+    const storedTitleById = new Map(stored.map((j) => [j.id, { title: j.title, src: j.src }]));
 
-    const results = await Promise.allSettled(
-      stored.map((j) =>
+    // Two sources of jobs, merged:
+    //   1. Server-side: GET /api/ingest/jobs?include_completed=true returns
+    //      every job the user has, including ones triggered by the backend
+    //      itself (e.g. the OAuth callback's auto-ingest) that the frontend
+    //      never registered in localStorage.
+    //   2. localStorage: legacy path for jobs the frontend triggered via
+    //      POST /api/ingest/* and recorded via registerJob(). Keeps the
+    //      title that was supplied at registration time.
+    let serverJobs: ApiJobListEntry[] = [];
+    try {
+      serverJobs = await apiFetch<ApiJobListEntry[]>(
+        "/api/ingest/jobs?include_completed=true",
+      );
+    } catch {
+      // Fall back to localStorage-only if the server fetch fails.
+    }
+
+    function titleFor(j: ApiJobListEntry): string {
+      const stored = storedTitleById.get(j.id);
+      if (stored) return stored.title;
+      if (j.source === "github") {
+        return j.source_url.replace(/^https?:\/\/github\.com\//, "");
+      }
+      // Notion source_url is a workspace_id (uuid) — short-form for display.
+      return `notion workspace (${j.source_url.slice(0, 8)}…)`;
+    }
+    function srcFor(j: ApiJobListEntry): "git" | "ntn" {
+      return j.source === "github" ? "git" : "ntn";
+    }
+
+    const fromServer: Job[] = serverJobs.map((j) => ({
+      id: j.id,
+      title: titleFor(j),
+      src: srcFor(j),
+      station: mapStatus(j.status),
+      progress: j.progress,
+      documents_indexed: j.documents_indexed,
+      total_documents: j.total_documents,
+      error: j.error_message,
+    }));
+
+    // Pick up any stored jobs not in the server list (transient state, or
+    // server returned an error and we fell back).
+    const seen = new Set(fromServer.map((j) => j.id));
+    const localOnly = stored.filter((j) => !seen.has(j.id));
+    const fromLocal = await Promise.allSettled(
+      localOnly.map((j) =>
         apiFetch<ApiJob>(`/api/ingest/status/${j.id}`)
-          .then((data) => ({
+          .then((data): Job => ({
             id: j.id,
             title: j.title,
             src: j.src,
@@ -132,7 +192,7 @@ function JobsPageInner() {
             total_documents: data.total_documents,
             error: data.error,
           }))
-          .catch(() => ({
+          .catch((): Job => ({
             id: j.id,
             title: j.title,
             src: j.src,
@@ -141,13 +201,19 @@ function JobsPageInner() {
             documents_indexed: 0,
             total_documents: null,
             error: "Failed to fetch status",
-          }))
-      )
+          })),
+      ),
     );
-
-    const updated: Job[] = results
+    const fromLocalResolved: Job[] = fromLocal
       .filter((r): r is PromiseFulfilledResult<Job> => r.status === "fulfilled")
       .map((r) => r.value);
+
+    const updated: Job[] = [...fromServer, ...fromLocalResolved];
+
+    if (updated.length === 0) {
+      setJobs([]);
+      return;
+    }
 
     setJobs(updated);
     // Auto-select job from ?job= query param
@@ -155,7 +221,7 @@ function JobsPageInner() {
       const idx = updated.findIndex((j) => j.id === targetJobId);
       if (idx >= 0) setSelectedIdx(idx);
     }
-  }, []);
+  }, [targetJobId]);
 
   // Initial fetch + poll every 5s
   useEffect(() => {

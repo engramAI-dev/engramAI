@@ -144,22 +144,29 @@ async def list_jobs(
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
     source: str | None = Query(None, description="Filter by source: github | notion"),
+    include_completed: bool = Query(
+        False,
+        description=(
+            "Include status='complete' jobs in the response. Default false to "
+            "keep the connections page clean (completed jobs are already "
+            "represented by indexed documents there). The jobs page passes "
+            "true to surface history."
+        ),
+    ),
 ) -> list[JobSummary]:
-    """List the caller's in-flight + recently failed ingest jobs.
+    """List the caller's ingest jobs.
 
-    Completed jobs are omitted — they are represented by indexed documents,
-    surfaced via /api/documents. The connections page merges these two
-    sources to show in-progress and errored repos alongside completed ones.
+    Default: in-flight + recently failed only. Pass `?include_completed=true`
+    to also receive completed jobs (used by the jobs history view).
     """
     stmt = (
         select(IngestJob)
-        .where(
-            IngestJob.user_id == uuid.UUID(user.id),
-            IngestJob.status != "complete",
-        )
+        .where(IngestJob.user_id == uuid.UUID(user.id))
         .order_by(IngestJob.updated_at.desc())
         .limit(50)
     )
+    if not include_completed:
+        stmt = stmt.where(IngestJob.status != "complete")
     if source is not None:
         stmt = stmt.where(IngestJob.source == source)
 

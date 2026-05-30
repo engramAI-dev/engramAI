@@ -6,6 +6,7 @@
  */
 
 import { useCallback, useEffect, use, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { registerJob } from "@/app/(app)/jobs/page";
 import { TopBar } from "@/components/engram/top-bar";
@@ -62,6 +63,12 @@ interface NotionGroup {
   pages: number;
   chunks: number;
   lastIndexed: string;
+  // Live progress fields populated by mergeJobsIntoGroups when an in-flight
+  // job exists for this workspace. Undefined when the row is purely
+  // document-derived (already-completed state).
+  progress?: number;
+  pagesIndexed?: number;
+  pagesTotal?: number | null;
   error?: string;
 }
 
@@ -152,11 +159,26 @@ function mergeJobsIntoGroups(
     }
   }
 
-  // Surface in-flight Notion jobs whose workspace isn't already in the
-  // grouped rows (e.g. first ingest of a freshly-connected workspace
-  // hasn't produced documents yet).
+  // Surface in-flight Notion jobs as placeholders for workspaces not yet
+  // in the grouped rows (first ingest hasn't produced documents). For
+  // workspaces that ARE already grouped, attach progress info to that
+  // existing row so a re-index shows live progress without duplicating.
+  const groupedNotion = grouped.notionSources.map((n) => {
+    const job = notionInFlightByWs.get(n.workspaceId);
+    if (!job) return n;
+    return {
+      ...n,
+      status: jobToSourceStatus(job),
+      progress: job.status === "failed" ? undefined : job.progress,
+      pagesIndexed: job.documents_indexed,
+      pagesTotal: job.total_documents,
+      error:
+        job.status === "failed" ? job.error_message ?? undefined : undefined,
+    };
+  });
+
   const existingWorkspaceIds = new Set(
-    grouped.notionSources.map((n) => n.workspaceId),
+    groupedNotion.map((n) => n.workspaceId),
   );
   const extraNotion: NotionGroup[] = [];
   for (const [wsId, job] of notionInFlightByWs.entries()) {
@@ -170,6 +192,9 @@ function mergeJobsIntoGroups(
       pages: 0,
       chunks: 0,
       lastIndexed: "—",
+      progress: job.status === "failed" ? undefined : job.progress,
+      pagesIndexed: job.documents_indexed,
+      pagesTotal: job.total_documents,
       error:
         job.status === "failed"
           ? job.error_message ?? undefined
@@ -179,7 +204,7 @@ function mergeJobsIntoGroups(
 
   return {
     repos: [...grouped.repos, ...extraRepos],
-    notionSources: [...grouped.notionSources, ...extraNotion],
+    notionSources: [...groupedNotion, ...extraNotion],
   };
 }
 
@@ -556,7 +581,11 @@ function NotionRow({
           fontFamily: "var(--font-mono)",
         }}
       >
-        {item.pages.toLocaleString()}
+        {item.status === "indexing" && item.pagesTotal != null
+          ? `${item.pagesIndexed ?? 0}/${item.pagesTotal}`
+          : item.status === "indexing" && item.progress != null
+          ? `${Math.round(item.progress * 100)}%`
+          : item.pages.toLocaleString()}
       </td>
       <td
         style={{
@@ -582,7 +611,7 @@ function NotionRow({
           fontFamily: "var(--font-mono)",
         }}
       >
-        {item.lastIndexed}
+        {item.status === "indexing" ? "indexing…" : item.lastIndexed}
       </td>
       <td style={{ padding: "6px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
         <V3Btn size="sm" onClick={onReindex}>
@@ -712,6 +741,21 @@ function ConnectionsContent() {
   useEffect(() => {
     refreshNotionWorkspaces();
   }, [refreshNotionWorkspaces]);
+
+  // After the Notion OAuth callback redirects here with ?notion_indexing=<job_id>,
+  // register the job in localStorage so the jobs page picks it up. The
+  // backend creates the IngestJob itself, so the frontend never had a
+  // chance to call registerJob via the usual POST /api/ingest/notion path.
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const jobId = searchParams.get("notion_indexing");
+    if (!jobId) return;
+    // Workspace name isn't in the URL; the providers refresh above will
+    // populate it shortly. "notion workspace" is a fine fallback label.
+    registerJob(jobId, "notion workspace", "ntn");
+    invalidateJobs();
+    setRefreshKey((k) => k + 1);
+  }, [searchParams]);
 
   const handleConnectNotion = useCallback(() => {
     // Multi-workspace is supported — connecting adds a new row keyed on
