@@ -2,7 +2,7 @@
 
 Base URL: `http://localhost:8000/api`
 
-This is the shared contract between Track A and Track B. Neither partner should change endpoint shapes without updating this doc and notifying the other.
+This is the shared contract between Partner A and Partner B. Neither partner should change endpoint shapes without updating this doc and notifying the other.
 
 ---
 
@@ -10,20 +10,20 @@ This is the shared contract between Track A and Track B. Neither partner should 
 
 | Endpoint Group | Implemented By | Consumed By |
 |----------------|---------------|-------------|
-| `/auth/*` | Track A | Both |
-| `/chat/*` | Track A | Track B (output generator reads chat results) |
-| `/documents/*` | Track A | Track B (enrichment, staleness UI) |
-| `/ingest/*` | Track A | Track B (settings UI triggers re-index) |
-| `/outputs/*` | Track B | Track A (context panel links to outputs) |
-| `/health` | Track A | Both |
+| `/auth/*` | Partner A | Both |
+| `/chat/*` | Partner A | Partner B (output generator reads chat results) |
+| `/documents/*` | Partner A | Partner B (enrichment, staleness UI) |
+| `/ingest/*` | Partner A | Partner B (settings UI triggers re-index) |
+| `/outputs/*` | Partner B | Partner A (context panel links to outputs) |
+| `/health` | Partner A | Both |
 
 ---
 
 ## Auth
 
-**Owner: Track A**
+**Owner: Partner A**
 
-Track B depends on these to protect her routes and identify the current user.
+Partner B depends on these to protect her routes and identify the current user.
 
 ### `GET /auth/login`
 
@@ -63,7 +63,7 @@ Returns current authenticated user.
 
 ### JWT Structure
 
-Track B needs this to implement auth middleware on output routes.
+Partner B needs this to implement auth middleware on output routes.
 
 ```json
 {
@@ -87,9 +87,9 @@ user_id = payload["sub"]
 
 ## Chat
 
-**Owner: Track A**
+**Owner: Partner A**
 
-Track B's output generator consumes the response shape from this endpoint.
+Partner B's output generator consumes the response shape from this endpoint.
 
 ### `POST /chat`
 
@@ -115,7 +115,7 @@ data: {"type": "done", "conversation_id": "uuid", "message_id": "uuid"}
 
 **SSE Event Types:**
 
-| Type | Description | Track B Cares? |
+| Type | Description | Partner B Cares? |
 |------|-------------|-----------------|
 | `text` | Partial streamed text from LLM | Yes — display in output panel |
 | `sources` | Retrieved chunks used for this response | Yes — display in context panel, feed to output generator |
@@ -123,7 +123,7 @@ data: {"type": "done", "conversation_id": "uuid", "message_id": "uuid"}
 
 ### `ChatEngineResult` (Internal)
 
-This is the structured object Track A's engine returns **before** SSE serialization. Track B's output generator receives this shape when processing a chat response into a formatted output.
+This is the structured object Partner A's engine returns **before** SSE serialization. Partner B's output generator receives this shape when processing a chat response into a formatted output.
 
 ```python
 @dataclass
@@ -149,7 +149,7 @@ class ChatEngineResult:
     output_tokens: int
 ```
 
-**Track B:** Your output generator takes `ChatEngineResult` and produces a formatted output (code snippet, summary, report). The `intent` field tells you what type of output to produce. The `sources` list gives you provenance for citations.
+**Partner B:** Your output generator takes `ChatEngineResult` and produces a formatted output (code snippet, summary, report). The `intent` field tells you what type of output to produce. The `sources` list gives you provenance for citations.
 
 ### `GET /chat/conversations`
 
@@ -216,9 +216,9 @@ Get messages for a conversation.
 
 ## Documents
 
-**Owner: Track A**
+**Owner: Partner A**
 
-Track B reads these for enrichment (Notion hierarchy, freshness) and the staleness comparison UI.
+Partner B reads these for enrichment (Notion hierarchy, freshness) and the staleness comparison UI.
 
 ### `GET /documents`
 
@@ -289,15 +289,15 @@ Get document details including its chunks.
 }
 ```
 
-**Track B:** The `cross_validation` field is what you need for the side-by-side staleness comparison UI (B10). `staleness_score` ranges from 0.0 (fresh) to 1.0 (completely outdated). You can fetch both the code document and the related Notion page to render them side by side.
+**Partner B:** The `cross_validation` field is what you need for the side-by-side staleness comparison UI (B10). `staleness_score` ranges from 0.0 (fresh) to 1.0 (completely outdated). You can fetch both the code document and the related Notion page to render them side by side.
 
 ---
 
 ## Ingestion
 
-**Owner: Track A**
+**Owner: Partner A**
 
-Track B calls these from the Settings UI to trigger re-indexing and show progress.
+Partner B calls these from the Settings UI to trigger re-indexing and show progress.
 
 ### `POST /ingest/github`
 
@@ -343,7 +343,7 @@ Trigger Notion workspace ingestion.
 
 ### `GET /ingest/status/{job_id}`
 
-Poll ingestion job status. Track B: use this in the settings UI to show progress bars.
+Poll ingestion job status. Partner B: use this in the settings UI to show progress bars.
 
 **Headers:** `Authorization: Bearer <jwt>`
 
@@ -365,9 +365,9 @@ Poll ingestion job status. Track B: use this in the settings UI to show progress
 
 ## Outputs
 
-**Owner: Track B**
+**Owner: Partner B**
 
-Track A's context panel will link to these when a chat response has been formatted into an output.
+Partner A's context panel will link to these when a chat response has been formatted into an output.
 
 ### `POST /outputs/generate`
 
@@ -452,9 +452,9 @@ Get full output content.
 
 ## Knowledge
 
-**Owner: Track A (retriever), Track B (endpoint + consumer)**
+**Owner: Partner A (retriever), Partner B (endpoint + consumer)**
 
-Added for B14 (MCP plugin). Returns ranked `SourceChunk` results identical to the shape in `ChatEngineResult.sources`. Track B's route stub currently returns an empty chunk list — Track A wires the real retriever (A9) behind this contract.
+Added for B14 (MCP plugin). Returns ranked `SourceChunk` results identical to the shape in `ChatEngineResult.sources`. Partner B's route stub currently returns an empty chunk list — Partner A wires the real retriever (A9) behind this contract.
 
 ### `GET /knowledge/search`
 
@@ -491,7 +491,7 @@ Added for B14 (MCP plugin). Returns ranked `SourceChunk` results identical to th
 
 ## Health
 
-**Owner: Track A**
+**Owner: Partner A**
 
 ### `GET /health`
 
@@ -562,7 +562,7 @@ All timestamps are ISO 8601, UTC: `"2026-04-12T18:00:00Z"`
 
 Shared reference so both partners know the schema shape.
 
-### Track A's Tables
+### Partner A's Tables
 
 ```sql
 -- Users (from GitHub OAuth)
@@ -624,7 +624,7 @@ CREATE TABLE messages (
 );
 ```
 
-### Track B's Tables
+### Partner B's Tables
 
 ```sql
 -- Generated outputs
@@ -641,4 +641,4 @@ CREATE TABLE outputs (
 );
 ```
 
-**Track B:** Your `outputs` table has foreign keys into Track A's `users`, `messages`, and `conversations` tables. You can reference them but should not modify their schema.
+**Partner B:** Your `outputs` table has foreign keys into Partner A's `users`, `messages`, and `conversations` tables. You can reference them but should not modify their schema.

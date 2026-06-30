@@ -2,7 +2,7 @@
 
 Layer 2 (built in v1, not user-visible) per
 `docs/v1/planning/partner-b-v1-plan.md`. Schema mirrors
-`docs/api-contract.md` §Database Tables → Track B's Tables.
+`docs/api-contract.md` §Database Tables → Partner B's Tables.
 
 FK constraints are NOT emitted at the DB level yet — see the companion
 migration `alembic/versions/0001_outputs.py`. The `ForeignKey(...)` hints
@@ -25,7 +25,7 @@ class Output(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid(), primary_key=True, default=uuid.uuid4
     )
-    # TODO [B1]: FK constraints land once Track A's migration creates
+    # TODO [B1]: FK constraints land once Partner A's migration creates
     # `users`, `messages`, `conversations`. Hints kept for ORM joins.
     user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True

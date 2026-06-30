@@ -4,7 +4,7 @@ Revision ID: 0001
 Revises:
 Create Date: 2026-04-20
 
-v1 scope note: FK constraints to Track A's `users`, `messages`, and
+v1 scope note: FK constraints to Partner A's `users`, `messages`, and
 `conversations` tables are intentionally NOT emitted yet — those tables
 do not exist in any migration. Columns are present as plain UUIDs.
 When A's migration lands, add the FKs in a follow-up revision.
@@ -29,7 +29,7 @@ def upgrade() -> None:
             primary_key=True,
             server_default=sa.text("gen_random_uuid()"),
         ),
-        # TODO [B1]: add FK constraints once Track A's migration creates
+        # TODO [B1]: add FK constraints once Partner A's migration creates
         # `users`, `messages`, `conversations`. Columns stay as plain UUIDs
         # until then so `alembic upgrade head` is self-applicable.
         sa.Column("user_id", sa.Uuid(), nullable=False),

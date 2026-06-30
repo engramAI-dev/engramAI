@@ -1,7 +1,7 @@
 """B1 — Output model metadata tests.
 
 Hermetic: inspects SQLAlchemy metadata only, no live DB. Integration tests
-(actually INSERT/SELECT against Postgres) are DEFERRED until Track A's
+(actually INSERT/SELECT against Postgres) are DEFERRED until Partner A's
 `users`/`messages`/`conversations` migrations exist — until then there is
 nothing to FK against and the outputs table is unreferenced by any route.
 Add integration tests alongside B2 (output generator) in v1.5.
@@ -19,7 +19,7 @@ def test_tablename_matches_contract() -> None:
 
 
 def test_columns_match_api_contract() -> None:
-    # Per docs/api-contract.md §Database Tables → Track B's Tables.
+    # Per docs/api-contract.md §Database Tables → Partner B's Tables.
     expected = {
         "id",
         "user_id",
@@ -69,7 +69,7 @@ def test_nullability_matches_contract() -> None:
 
 def test_fk_hints_present_on_orm_even_though_migration_omits_constraints() -> None:
     # FK hints stay in the model for ORM join semantics; the migration
-    # intentionally does NOT emit DB-level FK constraints until Track A's
+    # intentionally does NOT emit DB-level FK constraints until Partner A's
     # users/messages/conversations tables exist.
     t = Output.__table__
     assert any(fk.target_fullname == "users.id" for fk in t.c.user_id.foreign_keys)

@@ -1,4 +1,4 @@
-"""Shared test fixtures for Track B's backend test suite."""
+"""Shared test fixtures for Partner B's backend test suite."""
 
 from typing import Any
 

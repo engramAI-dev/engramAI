@@ -34,5 +34,5 @@ assignees: ''
 
 ## Owner
 
-- [ ] Track A
-- [ ] Track B
+- [ ] Partner A
+- [ ] Partner B

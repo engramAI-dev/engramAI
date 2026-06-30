@@ -5,7 +5,7 @@ D34 (last 10 messages).
 
 NOTE [B3 placeholder]: `SourceChunk` and `ChatEngineResult` are landed here
 ahead of A11/A12 because B3 needs them to type-check and test against the
-locked api-contract.md shapes. Track A owns the final location and any
+locked api-contract.md shapes. Partner A owns the final location and any
 non-contract fields. The `source_origin` field is the one B3-driven
 addition pending A's sign-off (see B3 PR description and design doc
 `docs/v1/planning/detailed/partner-b-b3-code-processor.md`).

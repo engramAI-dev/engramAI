@@ -14,8 +14,8 @@
 
 ## Owner
 
-- [ ] Track A (pipeline / ingestion / chat / input UI)
-- [ ] Track B (outputs / integrations / export UI)
+- [ ] Partner A (pipeline / ingestion / chat / input UI)
+- [ ] Partner B (outputs / integrations / export UI)
 
 ## Related
 

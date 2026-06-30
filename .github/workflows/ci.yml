@@ -95,7 +95,7 @@ jobs:
       - name: Install frontend deps
         # legacy-peer-deps=true is set in frontend/.npmrc (until @sentry/nextjs
         # ships a release with next@^16 in peerDependencies). No per-call flag
-        # needed here, in frontend host, or in local dev.
+        # needed here, in Vercel, or in local dev.
         run: npm ci
 
       - name: lint

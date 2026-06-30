@@ -35,7 +35,7 @@ celery.conf.update(
     # Silence the Celery 6 deprecation warning and keep startup retries on
     # if the broker is briefly unreachable during deploy.
     broker_connection_retry_on_startup=True,
-    # managed Redis free tier caps at 500k commands/day. Default kombu Redis
+    # Upstash free tier caps at 500k commands/day. Default kombu Redis
     # transport polls BRPOP every ~0.1s (≈864k cmd/day idle), which alone
     # blows the cap and crashes the worker with ResponseError on the
     # restore_visible mutex. Slow the poll to 1s; keep visibility timeout
@@ -51,10 +51,10 @@ celery.conf.update(
     worker_enable_remote_control=False,
 )
 
-# Validate the TLS chain when the broker URL uses rediss:// (managed Redis + most
+# Validate the TLS chain when the broker URL uses rediss:// (Upstash + most
 # managed providers). Without this, kombu warns "Secure redis scheme specified
 # (rediss) with no ssl options, defaulting to insecure SSL behaviour" and
-# skips chain validation. CERT_REQUIRED uses the system trust store; managed Redis
+# skips chain validation. CERT_REQUIRED uses the system trust store; Upstash
 # uses a public CA so no ssl_ca_certs override needed. Plain redis:// dev
 # URLs skip this entirely so local dev keeps working.
 if settings.redis_url.startswith("rediss://"):

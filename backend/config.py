@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     embedding_model: str = "nomic-ai/nomic-embed-text-v1.5"
     embedding_dimension: int = 768
 
-    # CORS — accepts a comma-separated string from env (e.g. for backend host)
+    # CORS — accepts a comma-separated string from env (e.g. for Railway)
     # OR a JSON list. NoDecode skips pydantic-settings' default JSON
     # auto-decode so the raw env string reaches the validator below.
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000"]

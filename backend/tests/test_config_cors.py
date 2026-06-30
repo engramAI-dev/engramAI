@@ -1,6 +1,6 @@
 """Tests for CORS_ORIGINS env parsing.
 
-Pydantic-settings parses `list[str]` as JSON by default. backend host and
+Pydantic-settings parses `list[str]` as JSON by default. Railway and
 other env-only platforms make pasting JSON awkward, so we accept a
 comma-separated string too. Default (no env set) is unchanged.
 """

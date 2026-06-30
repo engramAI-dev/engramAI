@@ -1,7 +1,7 @@
 """B2 — output generator tests.
 
 Hermetic. All tests drive `build_output` (pure function) so no DB fixture
-is needed. Integration tests against a real Postgres + Track A's
+is needed. Integration tests against a real Postgres + Partner A's
 `messages` table are DEFERRED until A's migration lands and the service-
 level `generate_output` can actually fetch.
 """

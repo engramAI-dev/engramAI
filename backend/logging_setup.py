@@ -1,7 +1,7 @@
 """Structured JSON logging — production observability for Engram backend.
 
 All log records emit one JSON line to stdout, ready for Better Stack
-via backend host's log drain. The `request_id` contextvar is set per-request
+via Railway's log drain. The `request_id` contextvar is set per-request
 by `api.request_id_middleware` and propagates across `await` boundaries,
 so every log line emitted during a request carries the same correlation ID.
 

@@ -1,7 +1,7 @@
 """B3 — Code post-processor.
 
 Layer 1 (user-visible v1) per `docs/v1/planning/partner-b-v1-plan.md`.
-Called inline by Track A's chat engine when `intent == "generate"`.
+Called inline by Partner A's chat engine when `intent == "generate"`.
 Pure function, no DB writes.
 
 Design: `docs/v1/planning/detailed/partner-b-b3-code-processor.md`
