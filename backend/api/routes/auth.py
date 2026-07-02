@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.middleware import CurrentUser, get_current_user
 from config import settings
+from crypto import encrypt_secret
 from models.database import get_session
 from models.user import User
 
@@ -121,8 +122,9 @@ async def callback(
             )
         github_user = user_resp.json()
 
-    # 4. Upsert user (D14: ON CONFLICT)
+    # 4. Upsert user (D14: ON CONFLICT). Encrypt the GH token at rest (G9).
     user_id = uuid.uuid4()
+    enc_token = encrypt_secret(github_token)
     stmt = (
         pg_insert(User)
         .values(
@@ -130,14 +132,14 @@ async def callback(
             github_id=github_user["id"],
             github_username=github_user["login"],
             avatar_url=github_user.get("avatar_url"),
-            access_token=github_token,
+            access_token=enc_token,
         )
         .on_conflict_do_update(
             index_elements=[User.github_id],
             set_={
                 "github_username": github_user["login"],
                 "avatar_url": github_user.get("avatar_url"),
-                "access_token": github_token,
+                "access_token": enc_token,
             },
         )
         .returning(User.id)

@@ -8,6 +8,10 @@ class Settings(BaseSettings):
     # App
     app_env: str = "development"
     secret_key: str = "change-me-in-production"
+    # Fernet key for encrypting secrets at rest (GH token). Empty = plaintext
+    # passthrough for local dev; MUST be set in production. Generate with:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    encryption_key: str = ""
 
     # Database
     database_url: str = "postgresql+asyncpg://engram:engram@localhost:5432/engram"
