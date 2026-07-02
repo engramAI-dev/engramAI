@@ -229,6 +229,10 @@ async def callback(
         user_agent=request.headers.get("user-agent"),
         ip=request.client.host if request.client else None,
     )
+    # Ensure a default team exists for this user (new signups; idempotent).
+    from api.routes.teams import ensure_default_team
+
+    await ensure_default_team(session, actual_user_id, github_user["login"])
     await session.commit()
 
     # 6. Legacy 24h URL token — transitional, remove once the frontend relies

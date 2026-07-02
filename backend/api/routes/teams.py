@@ -6,10 +6,11 @@ scopes through. Team creation / invites are paid capabilities gated by
 entitlements and live in the private build.
 """
 
+import re
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.entitlements import get_entitlements
@@ -19,6 +20,42 @@ from models.membership import Membership
 from models.team import Team
 
 router = APIRouter()
+
+
+def _slugify(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
+    return slug or "team"
+
+
+async def ensure_default_team(
+    session: AsyncSession, user_id: uuid.UUID, username: str
+) -> None:
+    """Idempotently ensure the user has a default team + owner membership.
+
+    Called at signup so new users get a workspace (the migration only
+    backfilled users that existed when it ran). No-op if they already have
+    any membership. Caller owns the commit.
+    """
+    existing = (
+        await session.execute(
+            select(func.count())
+            .select_from(Membership)
+            .where(Membership.user_id == user_id)
+        )
+    ).scalar_one()
+    if existing:
+        return
+
+    base = _slugify(username)
+    taken = (
+        await session.execute(select(Team.id).where(Team.slug == base))
+    ).scalar_one_or_none()
+    slug = base if taken is None else f"{base}-{user_id.hex[:6]}"
+
+    team = Team(name=f"{username}'s workspace", slug=slug, is_default=True, plan="free")
+    session.add(team)
+    await session.flush()
+    session.add(Membership(team_id=team.id, user_id=user_id, role="owner"))
 
 
 async def resolve_current_team(
