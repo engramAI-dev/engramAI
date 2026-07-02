@@ -27,6 +27,14 @@ class Settings(BaseSettings):
     # Frontend URL (for post-auth redirect)
     frontend_url: str = "http://localhost:3000"
 
+    # Session cookies (Phase 1). Production is cross-site (frontend on Vercel,
+    # API on Railway) so the browser needs SameSite=None + Secure to send the
+    # cookie on XHR. Local dev over http on same-site localhost uses Lax +
+    # insecure. Override both via env in production.
+    session_cookie_secure: bool = False
+    session_cookie_samesite: str = "lax"  # "lax" | "none" | "strict"
+    session_cookie_domain: str = ""  # e.g. ".engram.ai" in prod; empty = host-only
+
     # LLM (D45: configurable provider — "gemini" or "anthropic")
     llm_provider: str = "gemini"  # "gemini" | "anthropic"
     llm_model: str = "gemini-2.5-flash"
