@@ -1,18 +1,14 @@
 ---
 name: Task
-about: A specific implementation task from the work division
+about: Track a focused implementation or maintenance task
 title: "[Task] "
 labels: task
 assignees: ''
 ---
 
-## Task ID
-
-<!-- From docs/work-division.md, e.g. A5, B3 -->
-
 ## Description
 
-<!-- What needs to be built. -->
+<!-- What needs to be built or changed? -->
 
 ## Acceptance Criteria
 
@@ -20,19 +16,25 @@ assignees: ''
 - [ ]
 - [ ]
 
+## Area
+
+- [ ] Backend / API
+- [ ] Frontend / UI
+- [ ] Ingestion / embeddings
+- [ ] Retrieval / chat
+- [ ] MCP
+- [ ] Documentation
+- [ ] Infra / CI / DevEx
+- [ ] Other
+
 ## Files / Modules
 
-<!-- Which files or modules will this touch? -->
+<!-- Which files or modules are likely to be touched? -->
 
 -
 
 ## Dependencies
 
-<!-- Which tasks must be done before this one? -->
+<!-- Related issues, blockers, or follow-up tasks. -->
 
 -
-
-## Owner
-
-- [ ] Partner A
-- [ ] Partner B

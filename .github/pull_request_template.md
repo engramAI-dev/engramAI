@@ -6,35 +6,44 @@
 
 ## Type of Change
 
-- [ ] Feature (new functionality)
+- [ ] Feature
 - [ ] Bug fix
-- [ ] Refactor (no behavior change)
-- [ ] Infra / CI / DevOps
+- [ ] Refactor
 - [ ] Docs
+- [ ] Tests
+- [ ] Infra / CI / DevEx
 
-## Owner
+## Area
 
-- [ ] Partner A (pipeline / ingestion / chat / input UI)
-- [ ] Partner B (outputs / integrations / export UI)
+- [ ] Backend / API
+- [ ] Frontend / UI
+- [ ] Ingestion / embeddings
+- [ ] Retrieval / chat
+- [ ] MCP
+- [ ] Documentation
+- [ ] Other
 
 ## Related
 
-<!-- Link issues, docs, or Slack threads. -->
+<!-- Link issues, discussions, or docs. -->
 
 - Closes #
 
 ## What to Review
 
-<!-- Point reviewers to the important parts. -->
+<!-- Point reviewers to the important files, behavior, or tradeoffs. -->
 
 -
 
 ## Testing
 
-- [ ] Added/updated tests
+- [ ] Added or updated tests
 - [ ] Manually tested locally
-- [ ] Ran `ruff check .` (if Python changed)
-- [ ] Ran `npm run lint` (if TypeScript changed)
+- [ ] Ran `ruff check .` if Python changed
+- [ ] Ran `pytest` if backend logic changed
+- [ ] Ran `npm run lint` if frontend code changed
+- [ ] Ran `npm run test:run` if frontend logic changed
+- [ ] Documentation-only change
 
 ## Screenshots
 
@@ -42,4 +51,4 @@
 
 ## Notes
 
-<!-- Anything the reviewer should know — tradeoffs, follow-ups, things intentionally left out. -->
+<!-- Anything reviewers should know: follow-ups, known limitations, or checks you could not run. -->

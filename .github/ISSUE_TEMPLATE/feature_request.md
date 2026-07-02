@@ -18,14 +18,18 @@ assignees: ''
 
 <!-- What other approaches did you think about? Why not those? -->
 
-## Owner
+## Area
 
-- [ ] Partner A (pipeline / ingestion / chat / input UI)
-- [ ] Partner B (outputs / integrations / export UI)
-- [ ] Shared / TBD
+- [ ] Backend / API
+- [ ] Frontend / UI
+- [ ] Ingestion / embeddings
+- [ ] Retrieval / chat
+- [ ] MCP
+- [ ] Documentation
+- [ ] Other
 
-## Task IDs
+## Additional Context
 
-<!-- Reference task IDs from docs/work-division.md if applicable. -->
+<!-- Links, screenshots, related discussions, or examples. -->
 
 -
