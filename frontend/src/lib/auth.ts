@@ -22,8 +22,14 @@ export function isAuthenticated(): boolean {
 }
 
 export function logout(): void {
-  removeToken();
-  window.location.href = "/login";
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  // Best-effort server-side revoke of the cookie session; navigate regardless.
+  fetch(`${apiBase}/api/auth/logout`, { method: "POST", credentials: "include" })
+    .catch(() => {})
+    .finally(() => {
+      removeToken();
+      window.location.href = "/login";
+    });
 }
 
 export function getLoginUrl(): string {

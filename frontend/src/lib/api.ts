@@ -8,6 +8,39 @@ export function getApiUrl(path: string): string {
   return `${API_BASE}${path}`;
 }
 
+// --- Silent session renewal (Phase 1) ---------------------------------------
+// Cookies carry the session; on a 401 we try one refresh (rotates the refresh
+// cookie → new access cookie) and replay the request once. Concurrent 401s
+// share a single in-flight refresh so we don't stampede /refresh.
+let refreshInFlight: Promise<boolean> | null = null;
+
+function refreshSession(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = fetch(getApiUrl("/api/auth/refresh"), {
+      method: "POST",
+      credentials: "include",
+    })
+      .then((r) => r.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  }
+  return refreshInFlight;
+}
+
+async function fetchWithRefresh(
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  const withCreds: RequestInit = { ...init, credentials: "include" };
+  const res = await fetch(url, withCreds);
+  if (res.status !== 401) return res;
+  const renewed = await refreshSession();
+  if (!renewed) return res; // caller handles the 401
+  return fetch(url, withCreds); // replay once with the new access cookie
+}
+
 export async function apiFetch<T>(
   path: string,
   options: RequestInit = {}
@@ -24,7 +57,7 @@ export async function apiFetch<T>(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(getApiUrl(path), {
+  const res = await fetchWithRefresh(getApiUrl(path), {
     ...options,
     headers,
   });
@@ -56,7 +89,7 @@ export async function apiStream(
   const token =
     typeof window !== "undefined" ? localStorage.getItem("engram_token") : null;
 
-  const res = await fetch(getApiUrl(path), {
+  const res = await fetchWithRefresh(getApiUrl(path), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -127,7 +160,7 @@ export interface OutputResponse {
 async function jsonOrThrow<T>(path: string): Promise<T> {
   const token =
     typeof window !== "undefined" ? localStorage.getItem("engram_token") : null;
-  const res = await fetch(getApiUrl(path), {
+  const res = await fetchWithRefresh(getApiUrl(path), {
     cache: "no-store",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
@@ -163,7 +196,7 @@ export async function generateOutput(
 ): Promise<OutputResponse> {
   const token =
     typeof window !== "undefined" ? localStorage.getItem("engram_token") : null;
-  const res = await fetch(getApiUrl("/api/outputs/generate"), {
+  const res = await fetchWithRefresh(getApiUrl("/api/outputs/generate"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
