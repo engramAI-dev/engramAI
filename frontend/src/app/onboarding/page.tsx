@@ -340,12 +340,24 @@ export default function OnboardingPage() {
   const [indexingState, setIndexingState] = useState<IndexingState>("idle");
   const [indexingProgress, setIndexingProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [workspaceName, setWorkspaceName] = useState<string | null>(null);
+
+  /* ---- Current workspace (setup is scoped to it) ---- */
+  useEffect(() => {
+    apiFetch<{ name: string }>("/api/teams/current")
+      .then((t) => setWorkspaceName(t.name))
+      .catch(() => setWorkspaceName(null));
+  }, []);
 
   /* ---- Fetch providers on mount ---- */
   useEffect(() => {
     apiFetch<Provider[]>("/api/providers")
       .then((data) => {
-        const list = Array.isArray(data) ? data : FALLBACK_PROVIDERS;
+        // GitHub is authorized at login (identity), so it is always connected
+        // here — the user selects repos, never re-connects.
+        const list = (Array.isArray(data) ? data : FALLBACK_PROVIDERS).map((p) =>
+          p.id === "github" ? { ...p, connected: true } : p,
+        );
         setProviders(list);
         setLoadingProviders(false);
 
@@ -562,7 +574,7 @@ export default function OnboardingPage() {
             path='engram@core:~/setup$ connect'
             right={
               <button
-                onClick={() => router.push("/")}
+                onClick={() => router.push("/dashboard")}
                 style={{
                   fontFamily: "var(--font-mono)",
                   fontSize: 10,
@@ -572,7 +584,7 @@ export default function OnboardingPage() {
                   cursor: "pointer",
                 }}
               >
-                skip
+                {"←"} dashboard
               </button>
             }
           />
@@ -605,7 +617,9 @@ export default function OnboardingPage() {
               className="v3-cap"
               style={{ marginBottom: 12, display: "block" }}
             >
-              connect your sources
+              {workspaceName
+                ? `connect sources for ${workspaceName.toLowerCase()}`
+                : "connect your sources"}
             </span>
 
             {/* Error */}
@@ -738,13 +752,10 @@ export default function OnboardingPage() {
                       className="v3-marg"
                       style={{ textAlign: "center", marginTop: 8 }}
                     >
-                      {`// select resources to index, or skip`}
+                      {`// select resources to index, or set up later`}
                     </div>
                     <button
-                      onClick={() => {
-                        localStorage.setItem("engram_onboarded", "true");
-                        router.replace("/");
-                      }}
+                      onClick={() => router.push("/dashboard")}
                       style={{
                         display: "block",
                         margin: "8px auto 0",
@@ -756,7 +767,7 @@ export default function OnboardingPage() {
                         cursor: "pointer",
                       }}
                     >
-                      {"[ skip setup ]"}
+                      {"[ back to dashboard ]"}
                     </button>
                   </>
                 )}
