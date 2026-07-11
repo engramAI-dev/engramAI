@@ -48,7 +48,10 @@ _FALLBACK_TITLES: Final[dict[str, str]] = {
 
 
 def build_output(
-    result: ChatEngineResult, output_type: str, user_id: uuid.UUID
+    result: ChatEngineResult,
+    output_type: str,
+    user_id: uuid.UUID,
+    team_id: uuid.UUID,
 ) -> Output:
     """Pure function: `ChatEngineResult` -> unsaved `Output` row.
 
@@ -76,6 +79,7 @@ def build_output(
 
     return Output(
         user_id=user_id,
+        team_id=team_id,
         message_id=uuid.UUID(result.message_id),
         conversation_id=uuid.UUID(result.conversation_id),
         type=output_type,
@@ -88,12 +92,13 @@ def build_output(
 async def generate_output(
     session: AsyncSession,
     user_id: uuid.UUID,
+    team_id: uuid.UUID,
     message_id: str,
     output_type: str,
 ) -> Output:
     """Service entry point used by B6b's /outputs/generate route."""
     result = await _fetch_chat_result(session, message_id)
-    output = build_output(result, output_type, user_id)
+    output = build_output(result, output_type, user_id, team_id)
     session.add(output)
     await session.flush()
     return output

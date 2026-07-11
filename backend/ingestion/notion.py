@@ -341,6 +341,7 @@ def ingest_notion_workspace(
     notion_api_key: str,
     user_id: str,
     workspace_id: str = "default",
+    team_id: str | None = None,
 ) -> None:
     """Fetch Notion pages for one workspace, chunk content, dispatch embedding.
 
@@ -351,6 +352,7 @@ def ingest_notion_workspace(
     """
     jid = uuid.UUID(job_id)
     uid = uuid.UUID(user_id)
+    tid = uuid.UUID(team_id) if team_id else None
 
     try:
         with SyncSession() as session:
@@ -392,6 +394,7 @@ def ingest_notion_workspace(
                 doc = Document(
                     id=uuid.uuid4(),
                     user_id=uid,
+                    team_id=tid,
                     title=title,
                     source="notion",
                     url=url,
@@ -432,7 +435,7 @@ def ingest_notion_workspace(
             # workspaces this user has connected stay intact.
             session.execute(
                 delete(Document).where(
-                    Document.user_id == uid,
+                    Document.team_id == tid,
                     Document.source == "notion",
                     Document.metadata_["notion_workspace_id"].astext == workspace_id,
                     Document.id.notin_(new_doc_ids),

@@ -18,6 +18,7 @@ class UserConnection(Base):
         # doesn't apply, the convention is workspace_id = "default".
         UniqueConstraint(
             "user_id",
+            "team_id",
             "provider",
             "workspace_id",
             name="uq_user_connections_user_provider_workspace",
@@ -29,6 +30,12 @@ class UserConnection(Base):
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    # Engram workspace (team) this connection belongs to (2026-07-11 re-home,
+    # phase A). Distinct from `workspace_id` below, which is the *provider's*
+    # workspace (e.g. the Notion workspace).
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(), ForeignKey("teams.id", ondelete="CASCADE"), nullable=True, index=True
     )
     provider: Mapped[str] = mapped_column(String(50), nullable=False)
     workspace_id: Mapped[str] = mapped_column(String(255), nullable=False)

@@ -22,14 +22,18 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response
+from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.middleware import CurrentUser, get_current_user
+from config import settings
 from knowledge.retriever import retrieve
 from models.chunk import Chunk
 from models.database import async_session
 from models.document import Document
+from models.membership import Membership
+from models.team import Team
 
 router = APIRouter()
 
@@ -41,6 +45,7 @@ router = APIRouter()
 # Per-request user context. Set by the route handler before delegating
 # to the MCP session manager; read by LocalDispatcher in tool calls.
 _current_user_id: ContextVar[str | None] = ContextVar("mcp_current_user_id", default=None)
+_current_team_id: ContextVar[str | None] = ContextVar("mcp_current_team_id", default=None)
 
 
 class LocalDispatcher:
@@ -55,10 +60,12 @@ class LocalDispatcher:
         self, query: str, top_k: int = 10, source: str | None = None
     ) -> list[dict[str, Any]]:
         user_id = _require_user_id()
+        team_id = _require_team_id()
         async with async_session() as session:
             chunks = await retrieve(
                 query=query,
                 user_id=user_id,
+                team_id=team_id,
                 session=session,
                 top_k=top_k,
                 source_filter=source,
@@ -81,9 +88,10 @@ class LocalDispatcher:
         self, document_id: str, context_lines: int = 0
     ) -> dict[str, Any]:
         user_id = _require_user_id()
+        team_id = _require_team_id()
         async with async_session() as session:
             return await _fetch_document_payload(
-                document_id, user_id, session, context_lines
+                document_id, user_id, team_id, session, context_lines
             )
 
 
@@ -94,9 +102,17 @@ def _require_user_id() -> str:
     return user_id
 
 
+def _require_team_id() -> str:
+    team_id = _current_team_id.get()
+    if not team_id:
+        raise RuntimeError("MCP tool call without an active workspace")
+    return team_id
+
+
 async def _fetch_document_payload(
     document_id: str,
     user_id: str,
+    team_id: str,
     session: AsyncSession,
     context_lines: int,
 ) -> dict[str, Any]:
@@ -114,6 +130,7 @@ async def _fetch_document_payload(
         select(Document).where(
             Document.id == uuid.UUID(document_id),
             Document.user_id == uid,
+            Document.team_id == uuid.UUID(team_id),
         )
     )
     doc = result.scalar_one_or_none()
@@ -149,6 +166,42 @@ async def _fetch_document_payload(
     }
 
 
+async def _resolve_mcp_team_id(request: Request, user: CurrentUser) -> str:
+    """Resolve the workspace this MCP request operates on.
+
+    Prefers the `team_id` claim baked into the bearer JWT (present on
+    MCP tokens minted after workspace scoping landed). Falls back to the
+    user's most-recent workspace for older tokens that predate the claim.
+    """
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        raw = auth[7:].strip()
+        try:
+            claims = jwt.decode(raw, settings.secret_key, algorithms=["HS256"])
+        except JWTError:
+            claims = {}
+        team_id = claims.get("team_id")
+        if team_id:
+            return str(team_id)
+
+    async with async_session() as session:
+        tid = (
+            await session.execute(
+                select(Team.id)
+                .join(Membership, Membership.team_id == Team.id)
+                .where(Membership.user_id == uuid.UUID(user.id))
+                .order_by(Team.is_default.desc(), Team.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+    if tid is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No workspace; create one first",
+        )
+    return str(tid)
+
+
 async def _handle_mcp_request(request: Request, user: CurrentUser) -> Response:
     manager = getattr(request.app.state, "mcp_session_manager", None)
     if manager is None:
@@ -168,10 +221,13 @@ async def _handle_mcp_request(request: Request, user: CurrentUser) -> Response:
     except Exception:
         pass
 
+    team_id = await _resolve_mcp_team_id(request, user)
     token = _current_user_id.set(user.id)
+    team_token = _current_team_id.set(team_id)
     try:
         await manager.handle_request(request.scope, request.receive, request._send)
     finally:
+        _current_team_id.reset(team_token)
         _current_user_id.reset(token)
     # `handle_request` writes the response itself; FastAPI just needs us
     # to return *something* it won't double-send. An empty Response with

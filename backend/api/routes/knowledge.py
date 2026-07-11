@@ -4,12 +4,14 @@ Contract for B14 (MCP plugin). Response shape is locked — do not change.
 Now wired to the real retriever (A9).
 """
 
+import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.middleware import CurrentUser, get_current_user
+from api.workspace import get_active_team_id
 from knowledge.retriever import retrieve
 from models.database import get_session
 
@@ -23,11 +25,13 @@ async def search_knowledge(
     source: str | None = Query(None, pattern="^(github|notion)$"),
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    team_id: uuid.UUID = Depends(get_active_team_id),
 ) -> dict[str, list[dict[str, Any]]]:
     """Search indexed knowledge by semantic similarity."""
     chunks = await retrieve(
         query=q,
         user_id=user.id,
+        team_id=str(team_id),
         session=session,
         top_k=top_k,
         source_filter=source,

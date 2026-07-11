@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.middleware import CurrentUser, get_current_user
+from api.workspace import get_active_team_id
 from crypto import decrypt_secret
 from models.database import get_session
 from models.ingest_job import IngestJob
@@ -56,6 +57,7 @@ async def ingest_github(
     request: IngestGitHubRequest,
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    team_id: uuid.UUID = Depends(get_active_team_id),
 ) -> IngestStatusResponse:
     """Trigger ingestion of a GitHub repository."""
     # Create job record
@@ -63,6 +65,7 @@ async def ingest_github(
     job = IngestJob(
         id=job_id,
         user_id=uuid.UUID(user.id),
+        team_id=team_id,
         source="github",
         source_url=request.repo_url,
         status="queued",
@@ -86,6 +89,7 @@ async def ingest_github(
         repo_url=request.repo_url,
         github_token=github_token,
         user_id=user.id,
+        team_id=str(team_id),
     )
 
     return IngestStatusResponse(job_id=str(job_id), status="queued")
@@ -96,6 +100,7 @@ async def ingest_notion(
     request: IngestNotionRequest,
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    team_id: uuid.UUID = Depends(get_active_team_id),
 ) -> IngestStatusResponse:
     """Trigger ingestion of a specific Notion workspace."""
     # Look up the per-workspace Notion token. Multiple workspaces can be
@@ -103,6 +108,7 @@ async def ingest_notion(
     result = await session.execute(
         select(UserConnection.access_token).where(
             UserConnection.user_id == uuid.UUID(user.id),
+            UserConnection.team_id == team_id,
             UserConnection.provider == "notion",
             UserConnection.workspace_id == request.workspace_id,
         )
@@ -122,6 +128,7 @@ async def ingest_notion(
     job = IngestJob(
         id=job_id,
         user_id=uuid.UUID(user.id),
+        team_id=team_id,
         source="notion",
         source_url=request.workspace_id,
         status="queued",
@@ -137,6 +144,7 @@ async def ingest_notion(
         notion_api_key=notion_token,
         user_id=user.id,
         workspace_id=request.workspace_id,
+        team_id=str(team_id),
     )
 
     return IngestStatusResponse(job_id=str(job_id), status="queued")
@@ -146,6 +154,7 @@ async def ingest_notion(
 async def list_jobs(
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    team_id: uuid.UUID = Depends(get_active_team_id),
     source: str | None = Query(None, description="Filter by source: github | notion"),
     include_completed: bool = Query(
         False,
@@ -164,7 +173,10 @@ async def list_jobs(
     """
     stmt = (
         select(IngestJob)
-        .where(IngestJob.user_id == uuid.UUID(user.id))
+        .where(
+            IngestJob.user_id == uuid.UUID(user.id),
+            IngestJob.team_id == team_id,
+        )
         .order_by(IngestJob.updated_at.desc())
         .limit(50)
     )

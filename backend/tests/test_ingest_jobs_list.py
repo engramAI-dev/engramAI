@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routes import ingest
+from api.workspace import get_active_team_id
 from models.database import get_session
 
 USER_ID = "00000000-0000-0000-0000-000000000001"
@@ -87,6 +88,9 @@ class _FakeSession:
 def app() -> FastAPI:
     app = FastAPI()
     app.include_router(ingest.router, prefix="/api/ingest")
+    app.dependency_overrides[get_active_team_id] = lambda: uuid.UUID(
+        "00000000-0000-0000-0000-0000000000bb"
+    )
     return app
 
 

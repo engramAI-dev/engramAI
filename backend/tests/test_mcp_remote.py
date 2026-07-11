@@ -72,11 +72,15 @@ def test_local_dispatcher_passes_args_to_retriever(monkeypatch: pytest.MonkeyPat
 
     async def _go() -> None:
         token = mcp_route._current_user_id.set("user-42")
+        team_token = mcp_route._current_team_id.set(
+            "00000000-0000-0000-0000-0000000000bb"
+        )
         try:
             result = await mcp_route.LocalDispatcher().search_knowledge(
                 "find auth code", top_k=7, source="github"
             )
         finally:
+            mcp_route._current_team_id.reset(team_token)
             mcp_route._current_user_id.reset(token)
         assert result == []
 

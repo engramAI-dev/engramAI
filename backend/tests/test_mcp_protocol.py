@@ -84,6 +84,7 @@ def _bearer(mint_jwt: Any) -> dict[str, str]:
         {
             "sub": "00000000-0000-0000-0000-000000000001",
             "github_username": "tester",
+            "team_id": "00000000-0000-0000-0000-0000000000bb",
             "exp": int(time.time()) + 60,
         }
     )

@@ -14,6 +14,8 @@ import pytest
 
 from knowledge import retriever
 
+TEAM_ID = "00000000-0000-0000-0000-0000000000bb"
+
 
 @pytest.fixture
 def stub_embed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -62,6 +64,7 @@ async def test_logs_start_and_completion_on_success(
     chunks = await retriever.retrieve(
         query="how does auth work",
         user_id="user-1",
+        team_id=TEAM_ID,
         session=session,
         top_k=5,
     )
@@ -93,6 +96,7 @@ async def test_logs_empty_result_with_null_top_score(
     chunks = await retriever.retrieve(
         query="nothing matches this",
         user_id="user-1",
+        team_id=TEAM_ID,
         session=session,
     )
 
@@ -116,6 +120,7 @@ async def test_logs_failure_and_reraises(
         await retriever.retrieve(
             query="anything",
             user_id="user-1",
+            team_id=TEAM_ID,
             session=session,
         )
 
@@ -138,6 +143,7 @@ async def test_honors_source_filter_in_log(
     await retriever.retrieve(
         query="q",
         user_id="user-1",
+        team_id=TEAM_ID,
         session=session,
         source_filter="notion",
     )

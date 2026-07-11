@@ -30,6 +30,10 @@ class Output(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    # Workspace (team) this output belongs to (2026-07-11 re-home, phase A).
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(), ForeignKey("teams.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     message_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(), ForeignKey("messages.id"), nullable=True, index=True
     )
