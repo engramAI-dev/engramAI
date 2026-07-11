@@ -113,6 +113,7 @@ class ChatEngine:
         self,
         message: str,
         user_id: str,
+        team_id: str,
         session: AsyncSession,
         conversation_id: str | None = None,
     ) -> AsyncIterator[dict]:
@@ -139,6 +140,7 @@ class ChatEngine:
         sources = await retrieve(
             query=message,
             user_id=user_id,
+            team_id=team_id,
             session=session,
             top_k=10,
         )
@@ -162,6 +164,7 @@ class ChatEngine:
             conv = Conversation(
                 id=uuid.uuid4(),
                 user_id=uuid.UUID(user_id),
+                team_id=uuid.UUID(team_id),
                 title=message[:100],
             )
             session.add(conv)

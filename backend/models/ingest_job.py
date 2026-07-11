@@ -18,6 +18,11 @@ class IngestJob(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    # Workspace (team) the job runs for; the worker reads it to scope the
+    # Documents it creates (2026-07-11 re-home, phase A — nullable + backfilled).
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(), ForeignKey("teams.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     source: Mapped[str] = mapped_column(String(50), nullable=False)  # 'github' | 'notion'
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(

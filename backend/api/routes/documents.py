@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.middleware import CurrentUser, get_current_user
+from api.workspace import get_active_team_id
 from models.chunk import Chunk
 from models.database import get_session
 from models.document import Document
@@ -21,10 +22,11 @@ async def list_documents(
     limit: int = Query(100, ge=1, le=500),
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    team_id: uuid.UUID = Depends(get_active_team_id),
 ) -> dict:
     """List all indexed documents for the current user."""
     uid = uuid.UUID(user.id)
-    where = [Document.user_id == uid]
+    where = [Document.user_id == uid, Document.team_id == team_id]
     if source:
         where.append(Document.source == source)
 

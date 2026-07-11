@@ -42,6 +42,7 @@ async def _embed_query(query: str) -> list[float]:
 async def retrieve(
     query: str,
     user_id: str,
+    team_id: str,
     session: AsyncSession,
     top_k: int = 10,
     source_filter: str | None = None,
@@ -67,8 +68,8 @@ async def retrieve(
         vec_literal = "[" + ",".join(str(v) for v in query_embedding) + "]"
 
         # 2. Build pgvector similarity search query
-        where_clause = "d.user_id = :user_id"
-        params: dict = {"user_id": user_id, "top_k": top_k}
+        where_clause = "d.team_id = :team_id"
+        params: dict = {"team_id": team_id, "top_k": top_k}
 
         if source_filter:
             where_clause += " AND d.source = :source_filter"

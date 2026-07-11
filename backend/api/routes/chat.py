@@ -15,6 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.middleware import CurrentUser, get_current_user
+from api.workspace import get_active_team_id
 from chat.engine import chat_engine
 from models.conversation import Conversation
 from models.database import get_session
@@ -36,6 +37,7 @@ async def send_message(
     request: Request,
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    team_id: uuid.UUID = Depends(get_active_team_id),
 ) -> StreamingResponse:
     """Send a message and get a streaming AI response grounded in indexed knowledge."""
 
@@ -45,6 +47,7 @@ async def send_message(
             async for event in chat_engine.process_stream(
                 message=chat_request.message,
                 user_id=user.id,
+                team_id=str(team_id),
                 session=session,
                 conversation_id=chat_request.conversation_id,
             ):
@@ -102,6 +105,7 @@ async def list_conversations(
     limit: int = Query(20, ge=1, le=100),
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    team_id: uuid.UUID = Depends(get_active_team_id),
 ) -> ConversationListResponse:
     """List user's conversations."""
     uid = uuid.UUID(user.id)
@@ -109,7 +113,10 @@ async def list_conversations(
 
     # Get total count
     count_result = await session.execute(
-        select(func.count(Conversation.id)).where(Conversation.user_id == uid)
+        select(func.count(Conversation.id)).where(
+            Conversation.user_id == uid,
+            Conversation.team_id == team_id,
+        )
     )
     total = count_result.scalar_one()
 
@@ -122,7 +129,10 @@ async def list_conversations(
             func.count(Message.id).label("message_count"),
         )
         .outerjoin(Message, Message.conversation_id == Conversation.id)
-        .where(Conversation.user_id == uid)
+        .where(
+            Conversation.user_id == uid,
+            Conversation.team_id == team_id,
+        )
         .group_by(Conversation.id)
         .order_by(Conversation.updated_at.desc())
         .offset(offset)

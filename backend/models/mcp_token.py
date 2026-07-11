@@ -28,6 +28,10 @@ class McpToken(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    # Workspace (team) this MCP token grants access to (2026-07-11 re-home, phase A).
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(), ForeignKey("teams.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
 

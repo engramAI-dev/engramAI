@@ -23,6 +23,7 @@ def test_columns_match_api_contract() -> None:
     expected = {
         "id",
         "user_id",
+        "team_id",
         "message_id",
         "conversation_id",
         "type",

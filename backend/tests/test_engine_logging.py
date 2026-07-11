@@ -20,6 +20,8 @@ import pytest
 from chat import engine as engine_mod
 from chat.llm import StreamEvent
 
+TEAM_ID = "00000000-0000-0000-0000-0000000000bb"
+
 
 async def _empty_stream(*_: Any, **__: Any):
     yield StreamEvent(type="text_delta", text="I don't know.")
@@ -59,6 +61,7 @@ async def test_logs_intent_detection(
     async for evt in engine_mod.chat_engine.process_stream(
         message="explain how auth works",
         user_id=user_id,
+        team_id=TEAM_ID,
         session=mock_session,
     ):
         events.append(evt)
@@ -85,6 +88,7 @@ async def test_warns_when_answering_without_context(
     async for _ in engine_mod.chat_engine.process_stream(
         message="something not in the corpus",
         user_id=user_id,
+        team_id=TEAM_ID,
         session=mock_session,
     ):
         pass
@@ -129,6 +133,7 @@ async def test_no_empty_context_warning_when_sources_present(
     async for _ in engine_mod.chat_engine.process_stream(
         message="explain auth",
         user_id=str(uuid.uuid4()),
+        team_id=TEAM_ID,
         session=mock_session,
     ):
         pass

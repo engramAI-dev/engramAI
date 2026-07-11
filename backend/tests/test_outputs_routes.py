@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 
 from api.middleware import CurrentUser, get_current_user
 from api.routes import outputs
+from api.workspace import get_active_team_id
 from models.database import get_session
 from models.output import Output
 
@@ -110,6 +111,9 @@ def app(fake_session: _FakeSession) -> FastAPI:
         yield fake_session
 
     app.dependency_overrides[get_session] = _session_override
+    app.dependency_overrides[get_active_team_id] = lambda: uuid.UUID(
+        "00000000-0000-0000-0000-0000000000bb"
+    )
     return app
 
 

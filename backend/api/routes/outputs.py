@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.middleware import CurrentUser, get_current_user
+from api.workspace import get_active_team_id
 from models.database import get_session
 from models.output import Output
 from outputs.generator import generate_output
@@ -89,11 +90,13 @@ async def post_generate(
     body: GenerateOutputRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[CurrentUser, Depends(get_current_user)],
+    team_id: Annotated[uuid.UUID, Depends(get_active_team_id)],
 ) -> OutputResponse:
     try:
         output = await generate_output(
             session=session,
             user_id=uuid.UUID(user.id),
+            team_id=team_id,
             message_id=body.message_id,
             output_type=body.output_type,
         )
@@ -110,12 +113,13 @@ async def post_generate(
 async def list_outputs(
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[CurrentUser, Depends(get_current_user)],
+    team_id: Annotated[uuid.UUID, Depends(get_active_team_id)],
     type: Annotated[OutputType | None, Query()] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> OutputListResponse:
     user_uuid = uuid.UUID(user.id)
-    where = [Output.user_id == user_uuid]
+    where = [Output.user_id == user_uuid, Output.team_id == team_id]
     if type is not None:
         where.append(Output.type == type)
 

@@ -22,6 +22,8 @@ from api.mcp_auth import _hash, mint_mcp_token, verify_mcp_token
 from api.middleware import get_current_user
 from config import settings
 
+TEAM_ID = "00000000-0000-0000-0000-0000000000bb"
+
 
 def _request(headers: dict[str, str] | None = None) -> Request:
     raw = [
@@ -69,7 +71,7 @@ class _FakeSession:
 
 def test_mint_emits_scope_and_token_id() -> None:
     tid = uuid.uuid4()
-    token, token_hash = mint_mcp_token("u1", "alice", tid)
+    token, token_hash = mint_mcp_token("u1", "alice", tid, TEAM_ID)
     claims = jwt.decode(token, settings.secret_key, algorithms=["HS256"])
     assert claims["scope"] == "mcp"
     assert claims["token_id"] == str(tid)
@@ -82,7 +84,7 @@ def test_mint_emits_scope_and_token_id() -> None:
 @pytest.mark.asyncio
 async def test_verify_accepts_valid_token() -> None:
     tid = uuid.uuid4()
-    token, token_hash = mint_mcp_token("u1", "alice", tid)
+    token, token_hash = mint_mcp_token("u1", "alice", tid, TEAM_ID)
     claims = jwt.decode(token, settings.secret_key, algorithms=["HS256"])
     session = _FakeSession(_FakeRecord(token_hash))
     assert await verify_mcp_token(token, claims, session) is True
@@ -92,7 +94,7 @@ async def test_verify_accepts_valid_token() -> None:
 @pytest.mark.asyncio
 async def test_verify_rejects_revoked_token() -> None:
     tid = uuid.uuid4()
-    token, token_hash = mint_mcp_token("u1", "alice", tid)
+    token, token_hash = mint_mcp_token("u1", "alice", tid, TEAM_ID)
     claims = jwt.decode(token, settings.secret_key, algorithms=["HS256"])
     session = _FakeSession(_FakeRecord(token_hash, revoked=True))
     assert await verify_mcp_token(token, claims, session) is False
@@ -101,7 +103,7 @@ async def test_verify_rejects_revoked_token() -> None:
 @pytest.mark.asyncio
 async def test_verify_rejects_unknown_token() -> None:
     tid = uuid.uuid4()
-    token, _ = mint_mcp_token("u1", "alice", tid)
+    token, _ = mint_mcp_token("u1", "alice", tid, TEAM_ID)
     claims = jwt.decode(token, settings.secret_key, algorithms=["HS256"])
     session = _FakeSession(None)
     assert await verify_mcp_token(token, claims, session) is False
@@ -110,7 +112,7 @@ async def test_verify_rejects_unknown_token() -> None:
 @pytest.mark.asyncio
 async def test_verify_rejects_hash_mismatch() -> None:
     tid = uuid.uuid4()
-    token, _ = mint_mcp_token("u1", "alice", tid)
+    token, _ = mint_mcp_token("u1", "alice", tid, TEAM_ID)
     claims = jwt.decode(token, settings.secret_key, algorithms=["HS256"])
     session = _FakeSession(_FakeRecord("deadbeef" * 8))
     assert await verify_mcp_token(token, claims, session) is False
@@ -121,7 +123,7 @@ async def test_middleware_rejects_revoked_mcp_token(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     tid = uuid.uuid4()
-    token, token_hash = mint_mcp_token("u1", "alice", tid)
+    token, token_hash = mint_mcp_token("u1", "alice", tid, TEAM_ID)
     revoked_session = _FakeSession(_FakeRecord(token_hash, revoked=True))
 
     def _factory() -> _FakeSession:

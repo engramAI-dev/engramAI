@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api import session_tokens
 from api.middleware import CurrentUser, get_current_user
+from api.workspace import get_active_team_id
 from config import settings
 from crypto import encrypt_secret
 from models.database import get_session
@@ -312,6 +313,7 @@ async def create_mcp_token(
     body: dict,
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    team_id: uuid.UUID = Depends(get_active_team_id),
 ) -> dict:
     """Mint a 90d MCP-scoped JWT.
 
@@ -333,10 +335,12 @@ async def create_mcp_token(
         user_id=user.id,
         github_username=user.github_username,
         token_id=token_id,
+        team_id=str(team_id),
     )
     record = McpToken(
         id=token_id,
         user_id=uuid.UUID(user.id),
+        team_id=team_id,
         name=name,
         token_hash=token_hash,
     )

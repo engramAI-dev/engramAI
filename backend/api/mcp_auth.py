@@ -35,7 +35,7 @@ def _hash(token: str) -> str:
 
 
 def mint_mcp_token(
-    user_id: str, github_username: str, token_id: uuid.UUID
+    user_id: str, github_username: str, token_id: uuid.UUID, team_id: str
 ) -> tuple[str, str]:
     """Return `(jwt, sha256_hash)`. The JWT is shown to the user once;
     the hash is what we persist."""
@@ -44,6 +44,7 @@ def mint_mcp_token(
         "github_username": github_username,
         "scope": "mcp",
         "token_id": str(token_id),
+        "team_id": team_id,
         "exp": int(time.time()) + _MCP_TOKEN_EXPIRY_SECONDS,
     }
     token = jwt.encode(payload, settings.secret_key, algorithm=_ALGORITHM)

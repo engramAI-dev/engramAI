@@ -12,10 +12,13 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.middleware import CurrentUser, get_current_user
+from api.workspace import get_active_team_id
 from config import settings
 from crypto import decrypt_secret
 from models.database import get_session
 from models.ingest_job import IngestJob
+from models.membership import Membership
+from models.team import Team
 from models.user import User
 from models.user_connection import UserConnection
 
@@ -85,6 +88,7 @@ class TokenBody(BaseModel):
 async def list_providers(
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    team_id: uuid.UUID = Depends(get_active_team_id),
 ) -> list[ProviderInfo]:
     """Return all known providers with per-user connection status.
 
@@ -94,7 +98,8 @@ async def list_providers(
     """
     result = await session.execute(
         select(UserConnection).where(
-            UserConnection.user_id == uuid.UUID(user.id)
+            UserConnection.user_id == uuid.UUID(user.id),
+            UserConnection.team_id == team_id,
         )
     )
     # Group by provider so Notion can hold multiple workspaces.
@@ -208,9 +213,10 @@ async def list_notion_pages(
     workspace_id: str,
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    team_id: uuid.UUID = Depends(get_active_team_id),
 ) -> list[NotionPage]:
     """List accessible Notion pages for a specific connected workspace."""
-    token = await _get_notion_token(user, session, workspace_id)
+    token = await _get_notion_token(user, team_id, session, workspace_id)
     if not token:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -252,6 +258,7 @@ async def list_notion_pages(
 async def connect_notion(
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    team_id: uuid.UUID = Depends(get_active_team_id),
 ) -> ConnectResponse:
     """Start Notion OAuth flow or connect with a global API key."""
     if not settings.notion_client_id:
@@ -266,7 +273,7 @@ async def connect_notion(
         f"&redirect_uri={settings.notion_redirect_uri}"
         "&response_type=code"
         "&owner=user"
-        f"&state={user.id}"
+        f"&state={user.id}:{team_id}"
     )
     return ConnectResponse(redirect_url=redirect_url)
 
@@ -304,10 +311,27 @@ async def notion_callback(
     workspace_id = data.get("workspace_id") or "default"
     workspace_name = data.get("workspace_name", "")
 
-    user_id = uuid.UUID(state)
+    # State is "<user_id>:<team_id>"; older links may lack the team part, so
+    # fall back to the user's default team.
+    user_part, _, team_part = state.partition(":")
+    user_id = uuid.UUID(user_part)
+    if team_part:
+        team_id = uuid.UUID(team_part)
+    else:
+        team_id = (
+            await session.execute(
+                select(Team.id)
+                .join(Membership, Membership.team_id == Team.id)
+                .where(Membership.user_id == user_id)
+                .order_by(Team.is_default.desc(), Team.created_at.asc())
+                .limit(1)
+            )
+        ).scalar_one()
+
     await _upsert_connection(
         session,
         user_id=user_id,
+        team_id=team_id,
         provider="notion",
         workspace_id=workspace_id,
         access_token=access_token,
@@ -326,6 +350,7 @@ async def notion_callback(
         IngestJob(
             id=job_id,
             user_id=user_id,
+            team_id=team_id,
             source="notion",
             source_url=workspace_id,
             status="queued",
@@ -340,6 +365,7 @@ async def notion_callback(
         notion_api_key=access_token,
         user_id=str(user_id),
         workspace_id=workspace_id,
+        team_id=str(team_id),
     )
 
     return RedirectResponse(
@@ -355,6 +381,7 @@ async def disconnect_notion(
     workspace_id: str | None = None,
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    team_id: uuid.UUID = Depends(get_active_team_id),
 ) -> None:
     """Remove a Notion workspace connection.
 
@@ -367,6 +394,7 @@ async def disconnect_notion(
     """
     stmt = delete(UserConnection).where(
         UserConnection.user_id == uuid.UUID(user.id),
+        UserConnection.team_id == team_id,
         UserConnection.provider == "notion",
     )
     if workspace_id is not None:
@@ -384,6 +412,7 @@ async def save_token(
     body: TokenBody,
     user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    team_id: uuid.UUID = Depends(get_active_team_id),
 ) -> dict[str, bool]:
     """Upsert an API token for self-hosted setups that use keys over OAuth."""
     known_ids = {p["id"] for p in _PROVIDERS}
@@ -398,6 +427,7 @@ async def save_token(
     await _upsert_connection(
         session,
         user_id=uuid.UUID(user.id),
+        team_id=team_id,
         provider=provider_id,
         workspace_id="default",
         access_token=body.token,
@@ -411,6 +441,7 @@ async def save_token(
 # ---------------------------------------------------------------------------
 async def _get_notion_token(
     user: CurrentUser,
+    team_id: uuid.UUID,
     session: AsyncSession,
     workspace_id: str,
 ) -> str | None:
@@ -418,6 +449,7 @@ async def _get_notion_token(
     result = await session.execute(
         select(UserConnection.access_token).where(
             UserConnection.user_id == uuid.UUID(user.id),
+            UserConnection.team_id == team_id,
             UserConnection.provider == "notion",
             UserConnection.workspace_id == workspace_id,
         )
@@ -429,6 +461,7 @@ async def _upsert_connection(
     session: AsyncSession,
     *,
     user_id: uuid.UUID,
+    team_id: uuid.UUID,
     provider: str,
     workspace_id: str,
     access_token: str,
@@ -443,6 +476,7 @@ async def _upsert_connection(
     stmt = pg_insert(UserConnection).values(
         id=uuid.uuid4(),
         user_id=user_id,
+        team_id=team_id,
         provider=provider,
         workspace_id=workspace_id,
         access_token=access_token,
@@ -451,6 +485,7 @@ async def _upsert_connection(
     stmt = stmt.on_conflict_do_update(
         index_elements=[
             UserConnection.user_id,
+            UserConnection.team_id,
             UserConnection.provider,
             UserConnection.workspace_id,
         ],

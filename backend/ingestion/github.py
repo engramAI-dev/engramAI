@@ -98,10 +98,12 @@ def ingest_github_repo(
     repo_url: str,
     github_token: str | None,
     user_id: str,
+    team_id: str,
 ) -> None:
     """Clone a GitHub repo, chunk files, and dispatch embedding."""
     jid = uuid.UUID(job_id)
     uid = uuid.UUID(user_id)
+    tid = uuid.UUID(team_id)
     owner, repo_name = _parse_repo_info(repo_url)
     repo_slug = f"{owner}/{repo_name}"
     tmp_dir = None
@@ -150,6 +152,7 @@ def ingest_github_repo(
                 doc = Document(
                     id=uuid.uuid4(),
                     user_id=uid,
+                    team_id=tid,
                     title=os.path.basename(rel_path),
                     source="github",
                     repo=repo_slug,
@@ -184,7 +187,7 @@ def ingest_github_repo(
             if new_doc_ids:
                 session.execute(
                     delete(Document).where(
-                        Document.user_id == uid,
+                        Document.team_id == tid,
                         Document.repo == repo_slug,
                         Document.id.notin_(new_doc_ids),
                     )

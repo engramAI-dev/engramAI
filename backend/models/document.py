@@ -19,6 +19,11 @@ class Document(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    # Workspace (team) this row belongs to (2026-07-11 re-home, phase A —
+    # nullable + backfilled; tightened to NOT NULL in a follow-up).
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(), ForeignKey("teams.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     source: Mapped[str] = mapped_column(String(50), nullable=False)  # 'github' | 'notion'
     repo: Mapped[str | None] = mapped_column(String(255), nullable=True)  # 'owner/repo'
