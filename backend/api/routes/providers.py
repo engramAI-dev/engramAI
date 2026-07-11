@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.middleware import CurrentUser, get_current_user
 from config import settings
+from crypto import decrypt_secret
 from models.database import get_session
 from models.ingest_job import IngestJob
 from models.user import User
@@ -167,6 +168,7 @@ async def list_github_repos(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="GitHub token not found",
         )
+    token = decrypt_secret(token)
 
     async with httpx.AsyncClient() as client:
         resp = await client.get(

@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.middleware import CurrentUser, get_current_user
+from crypto import decrypt_secret
 from models.database import get_session
 from models.ingest_job import IngestJob
 from models.user import User
@@ -73,6 +74,8 @@ async def ingest_github(
         select(User.access_token).where(User.id == uuid.UUID(user.id))
     )
     github_token = result.scalar_one_or_none()
+    if github_token:
+        github_token = decrypt_secret(github_token)
 
     await session.commit()
 

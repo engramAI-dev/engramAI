@@ -12,6 +12,9 @@ from jose import ExpiredSignatureError, JWTError, jwt
 from config import settings
 
 _ALGORITHM = "HS256"
+# Keep in sync with api.routes.auth.COOKIE_ACCESS. Hardcoded here to avoid a
+# circular import (auth imports this module).
+_ACCESS_COOKIE = "engram_access"
 
 
 @dataclass(frozen=True)
@@ -20,12 +23,20 @@ class CurrentUser:
     github_username: str
 
 
-async def get_current_user(request: Request) -> CurrentUser:
+def _extract_token(request: Request) -> str | None:
+    """Access token from the Authorization header (legacy/MCP clients) or the
+    httpOnly access cookie (web sessions). Header wins when both are present."""
     header = request.headers.get("Authorization")
-    if not header or not header.lower().startswith("bearer "):
+    if header and header.lower().startswith("bearer "):
+        return header.split(" ", 1)[1].strip()
+    return request.cookies.get(_ACCESS_COOKIE)
+
+
+async def get_current_user(request: Request) -> CurrentUser:
+    token = _extract_token(request)
+    if not token:
         raise _unauthorized("Not authenticated")
 
-    token = header.split(" ", 1)[1].strip()
     try:
         claims = jwt.decode(token, settings.secret_key, algorithms=[_ALGORITHM])
     except ExpiredSignatureError:
@@ -39,8 +50,6 @@ async def get_current_user(request: Request) -> CurrentUser:
         raise _unauthorized("Invalid token")
 
     # MCP-scoped tokens (90d) require a DB lookup to honor revocation.
-    # Session JWTs (24h) skip this — their short lifetime is the
-    # revocation surface.
     if claims.get("scope") == "mcp":
         # Local import to avoid circulars: middleware loads early.
         from api.mcp_auth import verify_mcp_token
@@ -50,6 +59,16 @@ async def get_current_user(request: Request) -> CurrentUser:
             ok = await verify_mcp_token(token, claims, session)
         if not ok:
             raise _unauthorized("Token revoked")
+    elif claims.get("type") == "access":
+        # Web session token: stateless (15-min TTL is the ordinary kill
+        # window). Only the Redis instant-kill denylist is consulted, for
+        # "log out all devices" / suspend. Fails open on Redis outage.
+        sid = claims.get("sid")
+        if sid:
+            from api.session_tokens import is_denied
+
+            if await is_denied(sid):
+                raise _unauthorized("Session revoked")
 
     user = CurrentUser(id=user_id, github_username=username)
     request.state.user = user

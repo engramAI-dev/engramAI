@@ -75,3 +75,69 @@ async def test_missing_sub_claim_returns_401(mint_jwt: Any) -> None:
         await get_current_user(_request({"Authorization": f"Bearer {token}"}))
     assert exc.value.status_code == 401
     assert exc.value.detail == "Invalid token"
+
+
+# --- Phase 1: cookie delivery + session denylist ----------------------------
+
+
+@pytest.mark.asyncio
+async def test_access_cookie_accepted(mint_jwt: Any) -> None:
+    token = mint_jwt({"sub": "u2", "github_username": "bob", "exp": int(time.time()) + 60})
+    user = await get_current_user(_request({"Cookie": f"engram_access={token}"}))
+    assert user == CurrentUser(id="u2", github_username="bob")
+
+
+@pytest.mark.asyncio
+async def test_header_wins_over_cookie(mint_jwt: Any) -> None:
+    hdr = mint_jwt({"sub": "hdr", "github_username": "h", "exp": int(time.time()) + 60})
+    cookie = mint_jwt({"sub": "ck", "github_username": "c", "exp": int(time.time()) + 60})
+    user = await get_current_user(
+        _request({"Authorization": f"Bearer {hdr}", "Cookie": f"engram_access={cookie}"})
+    )
+    assert user.id == "hdr"
+
+
+@pytest.mark.asyncio
+async def test_denied_session_returns_401(
+    mint_jwt: Any, monkeypatch: Any
+) -> None:
+    import api.session_tokens as st
+
+    async def _denied(_sid: str) -> bool:
+        return True
+
+    monkeypatch.setattr(st, "is_denied", _denied)
+    token = mint_jwt(
+        {
+            "sub": "u3",
+            "github_username": "carol",
+            "type": "access",
+            "sid": "sess-1",
+            "exp": int(time.time()) + 60,
+        }
+    )
+    with pytest.raises(HTTPException) as exc:
+        await get_current_user(_request({"Cookie": f"engram_access={token}"}))
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "Session revoked"
+
+
+@pytest.mark.asyncio
+async def test_active_session_passes(mint_jwt: Any, monkeypatch: Any) -> None:
+    import api.session_tokens as st
+
+    async def _ok(_sid: str) -> bool:
+        return False
+
+    monkeypatch.setattr(st, "is_denied", _ok)
+    token = mint_jwt(
+        {
+            "sub": "u4",
+            "github_username": "dave",
+            "type": "access",
+            "sid": "sess-2",
+            "exp": int(time.time()) + 60,
+        }
+    )
+    user = await get_current_user(_request({"Cookie": f"engram_access={token}"}))
+    assert user == CurrentUser(id="u4", github_username="dave")
