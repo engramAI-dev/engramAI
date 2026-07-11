@@ -6,9 +6,11 @@ from models.document import Document
 from models.embedding import Embedding
 from models.ingest_job import IngestJob
 from models.mcp_token import McpToken
+from models.membership import Membership
 from models.message import Message
 from models.output import Output
 from models.session import Session
+from models.team import Team
 from models.user import User
 from models.user_connection import UserConnection
 
@@ -19,9 +21,11 @@ __all__ = [
     "Embedding",
     "IngestJob",
     "McpToken",
+    "Membership",
     "Message",
     "Output",
     "Session",
+    "Team",
     "User",
     "UserConnection",
 ]
