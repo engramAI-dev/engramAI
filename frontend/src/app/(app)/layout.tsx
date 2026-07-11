@@ -55,10 +55,9 @@ function AppShellInner({ children }: { children: ReactNode }) {
   useEffect(() => {
     loadConversations().catch(() => {});
 
-    // Redirect to onboarding if user hasn't completed it
-    if (typeof window !== "undefined" && !localStorage.getItem("engram_onboarded")) {
-      router.replace("/onboarding");
-    }
+    // No global onboarding gate: login lands on the dashboard and per-workspace
+    // setup is reached deliberately from there, so the app shell no longer
+    // force-redirects to /onboarding.
 
     // Fetch sidebar stats
     apiFetch<{ documents: { indexed_at: string }[]; total: number }>("/api/documents/")
