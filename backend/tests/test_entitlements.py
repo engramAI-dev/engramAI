@@ -8,6 +8,8 @@ def test_free_tier_gated_and_single_seat() -> None:
     assert e["can_create_teams"] is False
     assert e["can_invite"] is False
     assert e["seats"] == 1
+    # Multi-workspace creation is gated off in OSS; no count cap applies.
+    assert e["max_workspaces"] is None
 
 
 def test_unknown_or_none_plan_falls_back_to_free() -> None:

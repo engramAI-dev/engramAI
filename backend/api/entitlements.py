@@ -19,6 +19,10 @@ ENTITLEMENTS: dict[str, dict[str, object]] = {
         "queries_per_month": None,
         "mcp_tokens": None,
         "seats": 1,
+        # Multi-workspace creation is a paid/private capability — disabled in
+        # the OSS build by `can_create_teams`. `max_workspaces` is the count
+        # cap the paid build applies once creation is enabled (None = no cap).
+        "max_workspaces": None,
         "can_create_teams": False,
         "can_invite": False,
     },
