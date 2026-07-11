@@ -2,10 +2,20 @@
  * A14 — API fetch wrapper with Bearer token.
  */
 
+import { getActiveWorkspace } from "@/lib/workspace";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export function getApiUrl(path: string): string {
   return `${API_BASE}${path}`;
+}
+
+/** The active workspace header, sent on every request so the backend scopes
+ *  reads/writes to it. Empty when no workspace is active yet (backend falls
+ *  back to most-recent). */
+function workspaceHeader(): Record<string, string> {
+  const id = getActiveWorkspace();
+  return id ? { "X-Workspace-Id": id } : {};
 }
 
 // --- Silent session renewal (Phase 1) ---------------------------------------
@@ -50,6 +60,7 @@ export async function apiFetch<T>(
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    ...workspaceHeader(),
     ...(options.headers as Record<string, string>),
   };
 
@@ -93,6 +104,7 @@ export async function apiStream(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...workspaceHeader(),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify(body),
@@ -162,7 +174,10 @@ async function jsonOrThrow<T>(path: string): Promise<T> {
     typeof window !== "undefined" ? localStorage.getItem("engram_token") : null;
   const res = await fetchWithRefresh(getApiUrl(path), {
     cache: "no-store",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    headers: {
+      ...workspaceHeader(),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ detail: res.statusText }));
@@ -200,6 +215,7 @@ export async function generateOutput(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...workspaceHeader(),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify({ message_id: messageId, output_type: outputType }),

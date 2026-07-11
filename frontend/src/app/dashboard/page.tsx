@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthGuard } from "@/lib/auth-guard";
 import { apiFetch } from "@/lib/api";
+import { setActiveWorkspace } from "@/lib/workspace";
 import { V3TitleBar, V3StatusBar, V3Hr, EgLogo } from "@/components/engram/components";
 
 type Workspace = {
@@ -72,6 +73,7 @@ function DashboardInner() {
 
   const enter = useCallback(
     (w: Workspace) => {
+      setActiveWorkspace(w.id); // scope subsequent API calls to this workspace
       router.push(badgeFor(w) === "ready" ? "/" : "/onboarding");
     },
     [router],
@@ -83,10 +85,11 @@ function DashboardInner() {
     setBusy(true);
     setError(null);
     try {
-      await apiFetch<{ id: string }>("/api/teams", {
+      const created = await apiFetch<{ id: string }>("/api/teams", {
         method: "POST",
         body: JSON.stringify({ name }),
       });
+      setActiveWorkspace(created.id);
       router.push("/onboarding");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to create workspace");
