@@ -18,7 +18,7 @@ export default function AuthCallbackPage() {
     if (token) {
       setToken(token);
       setTimeout(() => {
-        router.replace("/");
+        router.replace("/dashboard");
       }, 100);
     } else {
       setTimeout(() => {
