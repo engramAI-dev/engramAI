@@ -71,6 +71,16 @@ jobs:
       - name: Apply migrations
         run: alembic upgrade head
 
+      # Guards against a forked migration chain (two children of one revision,
+      # e.g. an upstream 0009 colliding with a downstream sibling). Asserting a
+      # single head catches it deterministically at PR time instead of at
+      # deploy time.
+      - name: Assert single migration head
+        run: |
+          HEADS=$(alembic heads | grep -c "(head)")
+          echo "migration heads: $HEADS"
+          test "$HEADS" -eq 1
+
       - name: pytest
         # test_knowledge_routes::test_search_stub_returns_empty_chunks fails on
         # main with a UUID validation error unrelated to this branch — deselect
