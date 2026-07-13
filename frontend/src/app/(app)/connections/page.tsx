@@ -730,7 +730,7 @@ function ConnectionsContent() {
       name: string;
       connected: boolean;
       workspaces?: NotionWorkspaceConn[] | null;
-    }[]>("/api/providers")
+    }[]>("/api/providers/")
       .then((providers) => {
         const notion = providers.find((p) => p.id === "notion");
         setNotionWorkspaces(notion?.workspaces ?? []);
