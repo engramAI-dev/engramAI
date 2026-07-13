@@ -12,6 +12,7 @@ import uuid
 import httpx
 from sqlalchemy import delete
 
+from api.onboarding_state import mark_ready_sync
 from celery_app import celery
 from ingestion.chunker import chunk_file
 from models.chunk import Chunk
@@ -368,6 +369,7 @@ def ingest_notion_workspace(
         if total_pages == 0:
             with SyncSession() as session:
                 _update_job(session, jid, status="complete", progress=1.0)
+                mark_ready_sync(session, jid)
             return
 
         # Process each page — collect new docs, then swap old for new atomically

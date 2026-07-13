@@ -10,6 +10,7 @@ import uuid
 from sentence_transformers import SentenceTransformer
 from sqlalchemy import select
 
+from api.onboarding_state import mark_ready_sync
 from celery_app import celery
 from config import settings
 from models.chunk import Chunk
@@ -79,6 +80,7 @@ def embed_chunks(
         if total == 0:
             with SyncSession() as session:
                 _update_job(session, jid, status="complete", progress=1.0)
+                mark_ready_sync(session, jid)
             return
 
         logger.info("Embedding %d chunks for job %s", total, job_id)
@@ -114,6 +116,7 @@ def embed_chunks(
 
         with SyncSession() as session:
             _update_job(session, jid, status="complete", progress=1.0)
+            mark_ready_sync(session, jid)
 
         logger.info("Embedding complete for job %s", job_id)
 

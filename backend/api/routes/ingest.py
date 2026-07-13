@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.middleware import CurrentUser, get_current_user
+from api.onboarding_state import mark_indexing
 from api.workspace import get_active_team_id
 from crypto import decrypt_secret
 from models.database import get_session
@@ -80,6 +81,7 @@ async def ingest_github(
     if github_token:
         github_token = decrypt_secret(github_token)
 
+    await mark_indexing(session, uuid.UUID(user.id), team_id)
     await session.commit()
 
     # Dispatch Celery task
@@ -134,6 +136,7 @@ async def ingest_notion(
         status="queued",
     )
     session.add(job)
+    await mark_indexing(session, uuid.UUID(user.id), team_id)
     await session.commit()
 
     # Dispatch Celery task — worker scopes delete-old-docs by workspace_id
