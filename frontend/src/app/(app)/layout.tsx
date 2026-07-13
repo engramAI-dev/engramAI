@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { AuthGuard } from "@/lib/auth-guard";
 import { apiFetch } from "@/lib/api";
 import { ChatProvider, useChat } from "@/lib/chat-context";
+import { getActiveWorkspace } from "@/lib/workspace";
 import { Sidebar, type SidebarConversation } from "@/components/engram/sidebar";
 
 // -------------------------------------------------------------------
@@ -51,9 +52,23 @@ function AppShellInner({ children }: { children: ReactNode }) {
   const { conversations, newChat, loadConversation, loadConversations, deleteConversation } = useChat();
 
   const [sidebarStats, setSidebarStats] = useState<{ indexed: number; stale: number; lastSync: string } | undefined>();
+  const [workspaceName, setWorkspaceName] = useState<string | undefined>();
 
   useEffect(() => {
     loadConversations().catch(() => {});
+
+    // Resolve the active workspace's name for the sidebar header. The list
+    // endpoint is the source of truth; localStorage only holds the id (and
+    // may be empty, in which case the backend scopes to the default).
+    apiFetch<{ workspaces: { id: string; name: string; is_default: boolean }[] }>("/api/teams")
+      .then((data) => {
+        const list = data.workspaces ?? [];
+        const activeId = getActiveWorkspace();
+        const active =
+          list.find((w) => w.id === activeId) ?? list.find((w) => w.is_default) ?? list[0];
+        if (active) setWorkspaceName(active.name);
+      })
+      .catch(() => {});
 
     // No global onboarding gate: login lands on the dashboard and per-workspace
     // setup is reached deliberately from there, so the app shell no longer
@@ -136,6 +151,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
             deleteConversation(id).catch(() => {});
           }}
           stats={sidebarStats}
+          workspaceName={workspaceName}
         />
       </div>
       {/* Drag handle */}
