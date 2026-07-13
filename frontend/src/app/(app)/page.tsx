@@ -16,6 +16,7 @@ import {
 } from "react";
 import { useSearchParams } from "next/navigation";
 import { useChat, type Message, type SourceChunk } from "@/lib/chat-context";
+import { useWorkspaceName, workspacePathSegment } from "@/lib/workspace-context";
 import { apiFetch } from "@/lib/api";
 import { TopBar } from "@/components/engram/top-bar";
 import { V3Tag, V3Btn, V3StatusBar, V3Hr } from "@/components/engram/components";
@@ -819,6 +820,7 @@ status:         operational`}
 
 export default function WorkspacePage() {
   const { messages, isStreaming, currentSources, sendMessage } = useChat();
+  const workspaceName = useWorkspaceName();
   const [hotCite, setHotCite] = useState<number | null>(null);
   const [retrievalWidth, setRetrievalWidth] = useState(380);
   const draggingRetrieval = useRef(false);
@@ -875,7 +877,7 @@ export default function WorkspacePage() {
       </Suspense>
 
       <TopBar
-        path="engram@core:~/workspace$ ask"
+        path={`engram@core:~/${workspacePathSegment(workspaceName)}$ ask`}
         right={
           <>
             <span style={{ color: "var(--accent)" }}>{"\u25CF"}</span>

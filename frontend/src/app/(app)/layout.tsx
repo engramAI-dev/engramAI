@@ -12,6 +12,7 @@ import { AuthGuard } from "@/lib/auth-guard";
 import { apiFetch } from "@/lib/api";
 import { ChatProvider, useChat } from "@/lib/chat-context";
 import { getActiveWorkspace } from "@/lib/workspace";
+import { WorkspaceNameContext } from "@/lib/workspace-context";
 import { Sidebar, type SidebarConversation } from "@/components/engram/sidebar";
 
 // -------------------------------------------------------------------
@@ -183,7 +184,9 @@ function AppShellInner({ children }: { children: ReactNode }) {
           overflowWrap: "break-word" as const,
         }}
       >
-        {children}
+        <WorkspaceNameContext.Provider value={workspaceName}>
+          {children}
+        </WorkspaceNameContext.Provider>
       </main>
     </div>
   );
