@@ -84,6 +84,10 @@ class TokenBody(BaseModel):
 # ---------------------------------------------------------------------------
 # GET /providers — list providers with connection status
 # ---------------------------------------------------------------------------
+# Both spellings are served directly: the trailing-slash 307 redirect is
+# unsafe behind a TLS-terminating proxy (Location downgrades to http://,
+# which browsers block as mixed content — the F2/F3 prod bug).
+@router.get("", response_model=list[ProviderInfo], include_in_schema=False)
 @router.get("/", response_model=list[ProviderInfo])
 async def list_providers(
     user: CurrentUser = Depends(get_current_user),

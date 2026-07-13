@@ -351,7 +351,7 @@ export default function OnboardingPage() {
 
   /* ---- Fetch providers on mount ---- */
   useEffect(() => {
-    apiFetch<Provider[]>("/api/providers")
+    apiFetch<Provider[]>("/api/providers/")
       .then((data) => {
         // GitHub is authorized at login (identity), so it is always connected
         // here — the user selects repos, never re-connects.
