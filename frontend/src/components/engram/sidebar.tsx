@@ -28,6 +28,7 @@ interface SidebarProps {
   onSelectConversation?: (id: string) => void;
   onDeleteConversation?: (id: string) => void;
   stats?: SidebarStats;
+  workspaceName?: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -62,6 +63,7 @@ export function Sidebar({
   onSelectConversation,
   onDeleteConversation,
   stats,
+  workspaceName,
 }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -104,9 +106,42 @@ export function Sidebar({
           </span>
           <span className="v3-marg">v0.1</span>
         </div>
-        <div className="v3-marg" style={{ marginTop: 6 }}>
-          workspace
+        <div
+          className="v3-marg"
+          data-testid="sidebar-workspace-name"
+          style={{
+            marginTop: 6,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {workspaceName ?? "workspace"}
         </div>
+        <button
+          onClick={() => router.push("/dashboard")}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = "var(--accent)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = "var(--ink-3)";
+          }}
+          data-testid="sidebar-workspaces-link"
+          style={{
+            marginTop: 4,
+            padding: 0,
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            fontFamily: "var(--font-mono)",
+            fontSize: 10.5,
+            letterSpacing: "0.04em",
+            color: "var(--ink-3)",
+            textAlign: "left",
+          }}
+        >
+          {"←"} workspaces
+        </button>
       </div>
 
       {/* Navigation */}
