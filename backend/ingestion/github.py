@@ -13,6 +13,7 @@ import uuid
 
 from sqlalchemy import delete, select
 
+from api.onboarding_state import mark_ready_sync
 from celery_app import celery
 from ingestion.chunker import DENIED_DIRS, chunk_file, should_process_file
 from models.chunk import Chunk
@@ -132,6 +133,7 @@ def ingest_github_repo(
         if total_files == 0:
             with SyncSession() as session:
                 _update_job(session, jid, status="complete", progress=1.0)
+                mark_ready_sync(session, jid)
             return
 
         # Chunk each file — collect new doc IDs, delete old after insert

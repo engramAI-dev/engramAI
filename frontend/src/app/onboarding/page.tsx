@@ -64,27 +64,6 @@ type Resource = GitHubResource | NotionResource;
 type IndexingState = "idle" | "indexing" | "done" | "error";
 
 /* ------------------------------------------------------------------ */
-/*  Fallback data when API is unavailable                              */
-/* ------------------------------------------------------------------ */
-
-const FALLBACK_PROVIDERS: Provider[] = [
-  {
-    id: "github",
-    name: "GitHub",
-    auth_type: "oauth",
-    connected: true,
-    metadata: {},
-  },
-  {
-    id: "notion",
-    name: "Notion",
-    auth_type: "oauth",
-    connected: false,
-    metadata: {},
-  },
-];
-
-/* ------------------------------------------------------------------ */
 /*  Provider icon helper                                               */
 /* ------------------------------------------------------------------ */
 
@@ -335,6 +314,7 @@ export default function OnboardingPage() {
   const [resources, setResources] = useState<Record<string, Resource[]>>({});
   const [selected, setSelected] = useState<Record<string, Set<string>>>({});
   const [loadingProviders, setLoadingProviders] = useState(true);
+  const [providersError, setProvidersError] = useState<string | null>(null);
   const [loadingResources, setLoadingResources] = useState<Record<string, boolean>>({});
   const [tokenInputs, setTokenInputs] = useState<Record<string, string>>({});
   const [indexingState, setIndexingState] = useState<IndexingState>("idle");
@@ -347,38 +327,6 @@ export default function OnboardingPage() {
     apiFetch<{ name: string }>("/api/teams/current")
       .then((t) => setWorkspaceName(t.name))
       .catch(() => setWorkspaceName(null));
-  }, []);
-
-  /* ---- Fetch providers on mount ---- */
-  useEffect(() => {
-    apiFetch<Provider[]>("/api/providers/")
-      .then((data) => {
-        // GitHub is authorized at login (identity), so it is always connected
-        // here — the user selects repos, never re-connects.
-        const list = (Array.isArray(data) ? data : FALLBACK_PROVIDERS).map((p) =>
-          p.id === "github" ? { ...p, connected: true } : p,
-        );
-        setProviders(list);
-        setLoadingProviders(false);
-
-        // For each connected provider, fetch resources. Notion now requires
-        // a workspace_id query param; use the first connected workspace
-        // since onboarding targets the first-time-setup case.
-        for (const p of list) {
-          if (!p.connected) continue;
-          if (p.id === "notion") {
-            const wsId = p.workspaces?.[0]?.workspace_id;
-            if (wsId) fetchResources(p.id, wsId);
-          } else {
-            fetchResources(p.id);
-          }
-        }
-      })
-      .catch(() => {
-        setProviders(FALLBACK_PROVIDERS);
-        setLoadingProviders(false);
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* ---- Fetch resources for a provider ---- */
@@ -399,6 +347,47 @@ export default function OnboardingPage() {
         setLoadingResources((prev) => ({ ...prev, [providerId]: false }));
       });
   }, []);
+
+  /* ---- Fetch providers (mount + retry) ---- */
+  const loadProviders = useCallback(() => {
+    setLoadingProviders(true);
+    setProvidersError(null);
+    apiFetch<Provider[]>("/api/providers/")
+      .then((data) => {
+        // GitHub is authorized at login (identity), so it is always connected
+        // here — the user selects repos, never re-connects.
+        const list = (Array.isArray(data) ? data : []).map((p) =>
+          p.id === "github" ? { ...p, connected: true } : p,
+        );
+        setProviders(list);
+        setLoadingProviders(false);
+
+        // For each connected provider, fetch resources. Notion now requires
+        // a workspace_id query param; use the first connected workspace
+        // since onboarding targets the first-time-setup case.
+        for (const p of list) {
+          if (!p.connected) continue;
+          if (p.id === "notion") {
+            const wsId = p.workspaces?.[0]?.workspace_id;
+            if (wsId) fetchResources(p.id, wsId);
+          } else {
+            fetchResources(p.id);
+          }
+        }
+      })
+      .catch(() => {
+        // Masking this with fake provider data caused prod bug F3 (the page
+        // rendered Notion as disconnected during any fetch failure). Surface
+        // the outage and let the user retry instead.
+        setProviders([]);
+        setProvidersError("could not load providers — check connection");
+        setLoadingProviders(false);
+      });
+  }, [fetchResources]);
+
+  useEffect(() => {
+    loadProviders();
+  }, [loadProviders]);
 
   /* ---- Toggle resource selection ---- */
   const toggleResource = useCallback((providerId: string, resourceId: string) => {
@@ -650,6 +639,22 @@ export default function OnboardingPage() {
                 }}
               >
                 fetching providers...
+              </div>
+            ) : providersError ? (
+              <div style={{ textAlign: "center", padding: "16px 0" }}>
+                <div
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    color: "var(--err, #f44)",
+                    marginBottom: 12,
+                  }}
+                >
+                  err: {providersError}
+                </div>
+                <V3Btn size="sm" onClick={loadProviders}>
+                  retry
+                </V3Btn>
               </div>
             ) : (
               <>

@@ -12,6 +12,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.middleware import CurrentUser, get_current_user
+from api.onboarding_state import mark_indexing
 from api.workspace import get_active_team_id
 from config import settings
 from crypto import decrypt_secret
@@ -360,6 +361,7 @@ async def notion_callback(
             status="queued",
         )
     )
+    await mark_indexing(session, user_id, team_id)
     await session.commit()
 
     from ingestion.notion import ingest_notion_workspace
